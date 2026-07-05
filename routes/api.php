@@ -31,7 +31,13 @@ Route::apiResource('dividends', DividendController::class);
 Route::apiResource('statement-of-accounts', StatementOfAccountController::class);
 // Backward-compatible aliases for legacy frontend API paths.
 Route::get('statement-of-account', [StatementOfAccountController::class, 'index'])->name('statement-of-account.index');
+Route::post('statement-of-account', [StatementOfAccountController::class, 'store'])->name('statement-of-account.store');
+Route::get('statement-of-account/{statement_of_account}', [StatementOfAccountController::class, 'show'])->name('statement-of-account.show');
+Route::match(['put', 'patch'], 'statement-of-account/{statement_of_account}', [StatementOfAccountController::class, 'update'])->name('statement-of-account.update');
+Route::delete('statement-of-account/{statement_of_account}', [StatementOfAccountController::class, 'destroy'])->name('statement-of-account.destroy');
 Route::get('statement', [StatementOfAccountController::class, 'index'])->name('statement.index');
+Route::apiResource('statement-entries', StatementOfAccountController::class)
+    ->parameters(['statement-entries' => 'statement_of_account']);
 Route::apiResource('investment-statements', InvestmentStatementController::class, ['only' => ['index', 'show']]);
 Route::apiResource('financial-data', FinancialDataController::class);
 Route::apiResource('notifications', NotificationController::class);
