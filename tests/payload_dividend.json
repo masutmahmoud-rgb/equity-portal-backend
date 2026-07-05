@@ -1,0 +1,10 @@
+{
+  "company_id": 3,
+  "investment_id": 1,
+  "investor_id": 1,
+  "transaction_type": "Dividend",
+  "amount": 1000,
+  "status": "Pending",
+  "transaction_date": "2026-07-03",
+  "notes": "Test dividend"
+}

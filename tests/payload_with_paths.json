@@ -1,0 +1,11 @@
+{
+  "company_id": 3,
+  "investment_id": 1,
+  "investor_id": 1,
+  "transaction_type": "Withdrawal",
+  "amount": 500,
+  "status": "Pending",
+  "transaction_date": "2026-07-03",
+  "notes": "Test withdrawal via attachment_paths",
+  "attachment_paths": ["statement_of_accounts/fixture1.txt","statement_of_accounts/fixture2.txt"]
+}

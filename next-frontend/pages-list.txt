@@ -1,0 +1,11 @@
+﻿C:\Users\abdel\Documents\equity-backend\next-frontend\pages\dashboard.js
+C:\Users\abdel\Documents\equity-backend\next-frontend\pages\index.js
+C:\Users\abdel\Documents\equity-backend\next-frontend\pages\_app.js
+C:\Users\abdel\Documents\equity-backend\next-frontend\pages\investors\create.js
+C:\Users\abdel\Documents\equity-backend\next-frontend\pages\investors\index.js
+C:\Users\abdel\Documents\equity-backend\next-frontend\pages\investors\[id]\edit.js
+C:\Users\abdel\Documents\equity-backend\next-frontend\pages\investors\[id]\index.js
+C:\Users\abdel\Documents\equity-backend\next-frontend\pages\statement-of-accounts\create.js
+C:\Users\abdel\Documents\equity-backend\next-frontend\pages\statement-of-accounts\index.js
+C:\Users\abdel\Documents\equity-backend\next-frontend\pages\statement-of-accounts\[id]\edit.js
+C:\Users\abdel\Documents\equity-backend\next-frontend\pages\statement-of-accounts\[id]\index.js
