@@ -80,26 +80,31 @@ class DashboardController extends Controller
         // Get monthly dividends and withdrawals for the last 12 months
         $startDate = now()->subMonths(11)->startOfMonth();
 
+        $driver = DB::connection()->getDriverName();
+        $monthExpression = $driver === 'sqlite'
+            ? 'strftime("%Y-%m", transaction_date)'
+            : 'DATE_FORMAT(transaction_date, "%Y-%m")';
+
         $dividends = StatementOfAccount::select(
-            DB::raw('strftime("%Y-%m", transaction_date) as month'),
+            DB::raw("{$monthExpression} as month"),
             DB::raw('SUM(amount) as total')
         )
             ->where('transaction_type', 'Dividend')
             ->where('status', 'Paid')
             ->where('transaction_date', '>=', $startDate)
-            ->groupBy(DB::raw('strftime("%Y-%m", transaction_date)'))
+            ->groupBy(DB::raw($monthExpression))
             ->orderBy('month')
             ->get()
             ->keyBy('month');
 
         $withdrawals = StatementOfAccount::select(
-            DB::raw('strftime("%Y-%m", transaction_date) as month'),
+            DB::raw("{$monthExpression} as month"),
             DB::raw('SUM(amount) as total')
         )
             ->where('transaction_type', 'Withdrawal')
             ->where('status', 'Paid')
             ->where('transaction_date', '>=', $startDate)
-            ->groupBy(DB::raw('strftime("%Y-%m", transaction_date)'))
+            ->groupBy(DB::raw($monthExpression))
             ->orderBy('month')
             ->get()
             ->keyBy('month');

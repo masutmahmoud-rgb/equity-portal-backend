@@ -47,6 +47,13 @@ Route::post('capital-raises/review', [CapitalRaiseController::class, 'review'])-
 Route::post('capital-raises/{capital_raise}/publish', [CapitalRaiseController::class, 'publish'])->name('capital-raises.publish');
 Route::apiResource('capital-events/capital-raises', CapitalRaiseController::class)
     ->parameters(['capital-raises' => 'capital_raise'])
+    ->names([
+        'index' => 'capital-events.capital-raises.index',
+        'store' => 'capital-events.capital-raises.store',
+        'show' => 'capital-events.capital-raises.show',
+        'update' => 'capital-events.capital-raises.update',
+        'destroy' => 'capital-events.capital-raises.destroy',
+    ])
     ->only(['index', 'store', 'show', 'update', 'destroy']);
 Route::post('capital-events/capital-raises/review', [CapitalRaiseController::class, 'review'])->name('capital-events.capital-raises.review');
 Route::post('capital-events/capital-raises/{capital_raise}/publish', [CapitalRaiseController::class, 'publish'])->name('capital-events.capital-raises.publish');
