@@ -25,10 +25,16 @@ use App\Http\Controllers\Api\CapitalRaiseController;
 
 Route::apiResource('companies', CompanyController::class);
 Route::apiResource('investors', InvestorController::class);
+Route::apiResource('partners', InvestorController::class);
 Route::apiResource('investments', InvestmentController::class);
 Route::apiResource('investments.transactions', InvestmentTransactionController::class);
 Route::apiResource('dividends', DividendController::class);
 Route::apiResource('statement-of-accounts', StatementOfAccountController::class);
+Route::get('withdrawals', [StatementOfAccountController::class, 'withdrawalsIndex'])->name('withdrawals.index');
+Route::post('withdrawals', [StatementOfAccountController::class, 'withdrawalsStore'])->name('withdrawals.store');
+Route::get('withdrawals/{statement_of_account}', [StatementOfAccountController::class, 'withdrawalsShow'])->name('withdrawals.show');
+Route::match(['put', 'patch'], 'withdrawals/{statement_of_account}', [StatementOfAccountController::class, 'withdrawalsUpdate'])->name('withdrawals.update');
+Route::delete('withdrawals/{statement_of_account}', [StatementOfAccountController::class, 'withdrawalsDestroy'])->name('withdrawals.destroy');
 // Backward-compatible aliases for legacy frontend API paths.
 Route::get('statement-of-account', [StatementOfAccountController::class, 'index'])->name('statement-of-account.index');
 Route::post('statement-of-account', [StatementOfAccountController::class, 'store'])->name('statement-of-account.store');

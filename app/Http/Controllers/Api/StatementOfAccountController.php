@@ -20,6 +20,16 @@ class StatementOfAccountController extends Controller
         ]);
     }
 
+    public function withdrawalsIndex()
+    {
+        return response()->json([
+            'data' => StatementOfAccount::with(['company', 'investment.investor', 'investor'])
+                ->where('transaction_type', StatementOfAccount::TYPE_WITHDRAWAL)
+                ->latest('created_at')
+                ->get(),
+        ]);
+    }
+
     /**
      * Declare a company-wide dividend and create per-investor statement records.
      */
@@ -99,11 +109,27 @@ class StatementOfAccountController extends Controller
         ], 201);
     }
 
+    public function withdrawalsStore(Request $request)
+    {
+        $request->merge([
+            'transaction_type' => StatementOfAccount::TYPE_WITHDRAWAL,
+        ]);
+
+        return $this->store($request);
+    }
+
     public function show(StatementOfAccount $statement_of_account)
     {
         return response()->json([
             'data' => $this->loadRelations($statement_of_account),
         ]);
+    }
+
+    public function withdrawalsShow(StatementOfAccount $statement_of_account)
+    {
+        $this->ensureWithdrawal($statement_of_account);
+
+        return $this->show($statement_of_account);
     }
 
     public function update(Request $request, StatementOfAccount $statement_of_account)
@@ -137,6 +163,16 @@ class StatementOfAccountController extends Controller
         ]);
     }
 
+    public function withdrawalsUpdate(Request $request, StatementOfAccount $statement_of_account)
+    {
+        $this->ensureWithdrawal($statement_of_account);
+        $request->merge([
+            'transaction_type' => StatementOfAccount::TYPE_WITHDRAWAL,
+        ]);
+
+        return $this->update($request, $statement_of_account);
+    }
+
     public function attachment(StatementOfAccount $statement_of_account)
     {
         return response()->json(['message' => 'Use the attachments index endpoint with an attachment index.'], 400);
@@ -164,6 +200,13 @@ class StatementOfAccountController extends Controller
         return response()->json([
             'message' => 'Statements are read-only. Delete the underlying transaction instead.',
         ], 403);
+    }
+
+    public function withdrawalsDestroy(StatementOfAccount $statement_of_account)
+    {
+        $this->ensureWithdrawal($statement_of_account);
+
+        return $this->destroy($statement_of_account);
     }
 
     protected function validationRules(Request $request): array
@@ -202,6 +245,13 @@ class StatementOfAccountController extends Controller
     protected function loadRelations(StatementOfAccount $statement): StatementOfAccount
     {
         return $statement->load(['company', 'investment.investor', 'investor']);
+    }
+
+    protected function ensureWithdrawal(StatementOfAccount $statement): void
+    {
+        if ($statement->transaction_type !== StatementOfAccount::TYPE_WITHDRAWAL) {
+            abort(404, 'Withdrawal transaction not found.');
+        }
     }
 
     /**
