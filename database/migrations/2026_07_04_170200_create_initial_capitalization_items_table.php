@@ -16,7 +16,7 @@ return new class extends Migration
             $table->decimal('ownership_percentage', 8, 4);
             $table->timestamps();
 
-            $table->unique(['initial_capitalization_id', 'investor_id']);
+            $table->unique(['initial_capitalization_id', 'investor_id'], 'init_cap_items_cap_inv_uidx');
             $table->index('investor_id');
         });
     }
