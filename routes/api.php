@@ -29,6 +29,9 @@ Route::apiResource('investments', InvestmentController::class);
 Route::apiResource('investments.transactions', InvestmentTransactionController::class);
 Route::apiResource('dividends', DividendController::class);
 Route::apiResource('statement-of-accounts', StatementOfAccountController::class);
+// Backward-compatible aliases for legacy frontend API paths.
+Route::get('statement-of-account', [StatementOfAccountController::class, 'index'])->name('statement-of-account.index');
+Route::get('statement', [StatementOfAccountController::class, 'index'])->name('statement.index');
 Route::apiResource('investment-statements', InvestmentStatementController::class, ['only' => ['index', 'show']]);
 Route::apiResource('financial-data', FinancialDataController::class);
 Route::apiResource('notifications', NotificationController::class);

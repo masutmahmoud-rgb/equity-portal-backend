@@ -15,7 +15,7 @@ return new class extends Migration
             $table->decimal('ownership_percentage', 8, 4);
             $table->timestamps();
 
-            $table->unique(['ownership_register_id', 'investor_id']);
+            $table->unique(['ownership_register_id', 'investor_id'], 'own_reg_items_reg_inv_uidx');
             $table->index('investor_id');
         });
     }
