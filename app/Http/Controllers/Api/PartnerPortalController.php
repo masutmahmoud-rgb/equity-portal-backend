@@ -981,17 +981,21 @@ class PartnerPortalController extends Controller
             return null;
         }
 
+        // If route param is actually a user id, prefer resolving investor by user email.
+        $user = User::find($id);
+        if ($user && ! empty($user->email)) {
+            $mapped = Investor::resolveLinkedByEmail((string) $user->email);
+            if ($mapped) {
+                return $mapped;
+            }
+        }
+
         $investor = Investor::find($id);
         if ($investor) {
             return $investor;
         }
 
-        $user = User::find($id);
-        if (! $user || empty($user->email)) {
-            return null;
-        }
-
-        return Investor::resolveLinkedByEmail((string) $user->email);
+        return null;
     }
 
     protected function publishedValuationsForPartner(int $investorId)
