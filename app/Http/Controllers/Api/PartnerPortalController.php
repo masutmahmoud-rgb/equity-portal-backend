@@ -61,14 +61,14 @@ class PartnerPortalController extends Controller
             ], 404);
         }
 
-        $investments = Investment::where('investor_id', $investor_id)
+        $investments = Investment::where('investor_id', (int) $investor->id)
             ->where('status', 'Active')
             ->with(['company', 'transactions'])
             ->get();
 
-        $latestValuationByCompany = $this->latestValuationByCompanyForPartner((int) $investor_id);
+        $latestValuationByCompany = $this->latestValuationByCompanyForPartner((int) $investor->id);
 
-        $ownershipByCompany = $this->currentOwnershipByCompanyForValuations((int) $investor_id, $latestValuationByCompany);
+        $ownershipByCompany = $this->currentOwnershipByCompanyForValuations((int) $investor->id, $latestValuationByCompany);
 
         return response()->json([
             'data' => $investments->groupBy('company_id')->map(function ($group, $companyId) use ($latestValuationByCompany, $ownershipByCompany) {
@@ -113,13 +113,13 @@ class PartnerPortalController extends Controller
             return response()->json(['message' => 'Partner not found'], 404);
         }
 
-        $investments = Investment::where('investor_id', $investor_id)
+        $investments = Investment::where('investor_id', (int) $investor->id)
             ->with(['company', 'transactions'])
             ->where('status', 'Active')
             ->latest('created_at')
             ->get();
 
-        $latestValuationByCompany = $this->latestValuationByCompanyForPartner((int) $investor_id);
+        $latestValuationByCompany = $this->latestValuationByCompanyForPartner((int) $investor->id);
 
         $data = $investments->map(function ($investment) use ($latestValuationByCompany) {
             $totalInvested = (float) $investment->getCurrentBalance();
@@ -179,8 +179,8 @@ class PartnerPortalController extends Controller
             return response()->json(['message' => 'Partner not found'], 404);
         }
 
-        $transactions = InvestmentTransaction::whereHas('investment', function ($q) use ($investor_id) {
-                $q->where('investor_id', $investor_id);
+        $transactions = InvestmentTransaction::whereHas('investment', function ($q) use ($investor) {
+            $q->where('investor_id', (int) $investor->id);
             })
             ->with(['investment.company'])
             ->orderBy('transaction_date', 'asc')
@@ -232,13 +232,13 @@ class PartnerPortalController extends Controller
             ], 404);
         }
 
-        $investments = Investment::where('investor_id', $investor_id)
+        $investments = Investment::where('investor_id', (int) $investor->id)
             ->with(['company', 'transactions'])
             ->where('status', 'Active')
             ->latest('created_at')
             ->get();
 
-        $latestValuationByCompany = $this->latestValuationByCompanyForPartner((int) $investor_id);
+        $latestValuationByCompany = $this->latestValuationByCompanyForPartner((int) $investor->id);
 
         return response()->json([
             'data' => $investments->map(function ($investment) use ($latestValuationByCompany) {
@@ -300,7 +300,7 @@ class PartnerPortalController extends Controller
         }
 
         // Get all transactions for this partner, ordered chronologically
-        $transactions = StatementOfAccount::where('investor_id', $investor_id)
+        $transactions = StatementOfAccount::where('investor_id', (int) $investor->id)
             ->with('company')
             ->orderBy('transaction_date', 'asc')
             ->orderBy('created_at', 'asc')
@@ -308,7 +308,7 @@ class PartnerPortalController extends Controller
 
         // Calculate running balance
         $runningBalance = 0;
-        $ledger = $transactions->map(function ($transaction) use (&$runningBalance, $investor_id) {
+        $ledger = $transactions->map(function ($transaction) use (&$runningBalance, $investor) {
             // Credit: Dividend (positive), Debit: Withdrawal (negative)
             if ($transaction->transaction_type === StatementOfAccount::TYPE_DIVIDEND) {
                 $runningBalance += $transaction->amount;
@@ -323,7 +323,7 @@ class PartnerPortalController extends Controller
             $company = $transaction->company;
 
             $attachments = $transaction->transaction_type === StatementOfAccount::TYPE_WITHDRAWAL
-                ? $this->buildWithdrawalAttachmentsMetadata($transaction, (int) $investor_id)
+                ? $this->buildWithdrawalAttachmentsMetadata($transaction, (int) $investor->id)
                 : [];
 
             return [
@@ -380,7 +380,12 @@ class PartnerPortalController extends Controller
      */
     public function downloadStatementAttachment(Request $request, $investor_id, StatementOfAccount $statement_of_account, $index)
     {
-        if ((int) $statement_of_account->investor_id !== (int) $investor_id) {
+        $investor = $this->resolveLinkedInvestor($investor_id);
+        if (! $investor) {
+            return response()->json(['message' => 'Partner not found.'], 404);
+        }
+
+        if ((int) $statement_of_account->investor_id !== (int) $investor->id) {
             return response()->json(['message' => 'Attachment not found.'], 404);
         }
 
@@ -441,12 +446,12 @@ class PartnerPortalController extends Controller
             return (float) ($activeRatesByCode->get($code) ?? 1.0);
         };
 
-        $investments = Investment::where('investor_id', $investor_id)
+        $investments = Investment::where('investor_id', (int) $investor->id)
             ->with(['company', 'transactions'])
             ->where('status', 'Active')
             ->get();
 
-        $publishedValuations = $this->publishedValuationsForPartner((int) $investor_id)
+        $publishedValuations = $this->publishedValuationsForPartner((int) $investor->id)
             ->with('company')
             ->orderByDesc('valuation_year')
             ->orderByDesc('valuation_half')
@@ -455,7 +460,7 @@ class PartnerPortalController extends Controller
             ->get();
 
         $latestValuationByCompany = $publishedValuations->groupBy('company_id')->map(fn ($rows) => $rows->first());
-        $ownershipByCompany = $this->currentOwnershipByCompanyForValuations((int) $investor_id, $latestValuationByCompany);
+        $ownershipByCompany = $this->currentOwnershipByCompanyForValuations((int) $investor->id, $latestValuationByCompany);
 
         $companyCards = $investments
             ->groupBy('company_id')
@@ -506,7 +511,7 @@ class PartnerPortalController extends Controller
             ];
         })->values();
 
-        $transactions = StatementOfAccount::where('investor_id', $investor_id)
+        $transactions = StatementOfAccount::where('investor_id', (int) $investor->id)
             ->with('company')
             ->get();
 
@@ -620,14 +625,14 @@ class PartnerPortalController extends Controller
 
         $notifications = Notification::active()
             ->with(['valuation.company'])
-            ->where(function ($query) use ($investor_id) {
+            ->where(function ($query) use ($investor) {
                 $query->whereNull('target_investor_id')
-                    ->orWhere('target_investor_id', $investor_id);
+                    ->orWhere('target_investor_id', (int) $investor->id);
             })
             ->latest('publish_date')
             ->latest('created_at')
             ->get()
-            ->map(function (Notification $notification) use ($investor_id) {
+            ->map(function (Notification $notification) use ($investor) {
                 return [
                     'id' => 'notification-' . $notification->id,
                     'source' => 'notification',
@@ -640,7 +645,7 @@ class PartnerPortalController extends Controller
                     'is_active' => $notification->is_active,
                     'valuation_id' => $notification->valuation_id,
                     'target_investor_id' => $notification->target_investor_id,
-                    'link' => $notification->valuation_id ? "/partner-portal/{$investor_id}/valuations/{$notification->valuation_id}" : null,
+                    'link' => $notification->valuation_id ? "/partner-portal/{$investor->id}/valuations/{$notification->valuation_id}" : null,
                     'valuation' => $notification->valuation ? [
                         'id' => $notification->valuation->id,
                         'company' => $notification->valuation->company ? [
@@ -651,17 +656,17 @@ class PartnerPortalController extends Controller
                 ];
             });
 
-        $companyIds = Investment::where('investor_id', $investor_id)
+        $companyIds = Investment::where('investor_id', (int) $investor->id)
             ->pluck('company_id')
             ->unique()
             ->values();
 
         $announcementItems = Announcement::published()
-            ->where(function ($query) use ($investor_id, $companyIds) {
+            ->where(function ($query) use ($investor, $companyIds) {
                 $query->whereRaw('LOWER(audience_type) = ?', [strtolower(Announcement::AUDIENCE_ALL)])
-                    ->orWhere(function ($sub) use ($investor_id) {
+                    ->orWhere(function ($sub) use ($investor) {
                         $sub->whereRaw('LOWER(audience_type) = ?', [strtolower(Announcement::AUDIENCE_PARTNER)])
-                            ->where('investor_id', $investor_id);
+                            ->where('investor_id', (int) $investor->id);
                     })
                     ->orWhere(function ($sub) use ($companyIds) {
                         $sub->whereRaw('LOWER(audience_type) = ?', [strtolower(Announcement::AUDIENCE_COMPANY)])
@@ -672,7 +677,7 @@ class PartnerPortalController extends Controller
             ->latest('publish_date')
             ->latest('created_at')
             ->get()
-            ->map(function (Announcement $announcement) use ($investor_id) {
+            ->map(function (Announcement $announcement) use ($investor) {
                 return [
                     'id' => 'announcement-' . $announcement->id,
                     'source' => 'announcement',
@@ -684,8 +689,8 @@ class PartnerPortalController extends Controller
                     'expiry_date' => $announcement->expiry_date ? $announcement->expiry_date->toDateString() : null,
                     'is_active' => true,
                     'valuation_id' => null,
-                    'target_investor_id' => $investor_id,
-                    'link' => "/partner-portal/{$investor_id}/announcements",
+                    'target_investor_id' => (int) $investor->id,
+                    'link' => "/partner-portal/{$investor->id}/announcements",
                     'valuation' => null,
                 ];
             });
@@ -720,12 +725,12 @@ class PartnerPortalController extends Controller
         }
 
         $partnerCompanyIds = Investment::query()
-            ->where('investor_id', $investor_id)
+            ->where('investor_id', (int) $investor->id)
             ->pluck('company_id')
             ->unique()
             ->values();
 
-        $query = $this->publishedValuationsForPartner((int) $investor_id)
+        $query = $this->publishedValuationsForPartner((int) $investor->id)
             ->with('company')
             ->whereIn('company_id', $partnerCompanyIds);
 
@@ -745,8 +750,8 @@ class PartnerPortalController extends Controller
             ]);
         }
 
-        $totalInvested = (float) InvestmentTransaction::whereHas('investment', function ($q) use ($investor_id, $valuation) {
-            $q->where('investor_id', $investor_id)
+        $totalInvested = (float) InvestmentTransaction::whereHas('investment', function ($q) use ($investor, $valuation) {
+            $q->where('investor_id', (int) $investor->id)
                 ->where('company_id', $valuation->company_id);
         })->sum('amount');
 
@@ -792,12 +797,12 @@ class PartnerPortalController extends Controller
         }
 
         $partnerCompanyIds = Investment::query()
-            ->where('investor_id', $investor_id)
+            ->where('investor_id', (int) $investor->id)
             ->pluck('company_id')
             ->unique()
             ->values();
 
-        $query = $this->publishedValuationsForPartner((int) $investor_id)
+        $query = $this->publishedValuationsForPartner((int) $investor->id)
             ->with('company')
             ->whereIn('company_id', $partnerCompanyIds)
             ->latest('valuation_date')
@@ -858,12 +863,12 @@ class PartnerPortalController extends Controller
         }
 
         $partnerCompanyIds = Investment::query()
-            ->where('investor_id', $investor_id)
+            ->where('investor_id', (int) $investor->id)
             ->pluck('company_id')
             ->unique()
             ->values();
 
-        $valuation = $this->publishedValuationsForPartner((int) $investor_id)
+        $valuation = $this->publishedValuationsForPartner((int) $investor->id)
             ->with('company')
             ->where('id', $valuation_id)
             ->whereIn('company_id', $partnerCompanyIds)
@@ -875,8 +880,8 @@ class PartnerPortalController extends Controller
             ], 404);
         }
 
-        $totalInvested = (float) InvestmentTransaction::whereHas('investment', function ($q) use ($investor_id, $valuation) {
-            $q->where('investor_id', $investor_id)
+        $totalInvested = (float) InvestmentTransaction::whereHas('investment', function ($q) use ($investor, $valuation) {
+            $q->where('investor_id', (int) $investor->id)
                 ->where('company_id', $valuation->company_id);
         })->sum('amount');
 
@@ -921,17 +926,17 @@ class PartnerPortalController extends Controller
             ], 404);
         }
 
-        $companyIds = Investment::where('investor_id', $investor_id)
+        $companyIds = Investment::where('investor_id', (int) $investor->id)
             ->pluck('company_id')
             ->unique()
             ->values();
 
         $announcements = Announcement::published()
-            ->where(function ($query) use ($investor_id, $companyIds) {
+            ->where(function ($query) use ($investor, $companyIds) {
                 $query->whereRaw('LOWER(audience_type) = ?', [strtolower(Announcement::AUDIENCE_ALL)])
-                    ->orWhere(function ($sub) use ($investor_id) {
+                    ->orWhere(function ($sub) use ($investor) {
                         $sub->whereRaw('LOWER(audience_type) = ?', [strtolower(Announcement::AUDIENCE_PARTNER)])
-                            ->where('investor_id', $investor_id);
+                            ->where('investor_id', (int) $investor->id);
                     })
                     ->orWhere(function ($sub) use ($companyIds) {
                         $sub->whereRaw('LOWER(audience_type) = ?', [strtolower(Announcement::AUDIENCE_COMPANY)])
