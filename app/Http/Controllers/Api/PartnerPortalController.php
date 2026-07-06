@@ -65,15 +65,7 @@ class PartnerPortalController extends Controller
             ->with(['company', 'transactions'])
             ->get();
 
-        $latestValuationByCompany = PortfolioValuation::query()
-            ->where('status', PortfolioValuation::STATUS_PUBLISHED)
-            ->orderByDesc('valuation_year')
-            ->orderByDesc('valuation_half')
-            ->orderByDesc('valuation_date')
-            ->orderByDesc('created_at')
-            ->get()
-            ->groupBy('company_id')
-            ->map(fn ($rows) => $rows->first());
+        $latestValuationByCompany = $this->latestValuationByCompanyForPartner((int) $investor_id);
 
         $ownershipByCompany = $this->currentOwnershipByCompanyForValuations((int) $investor_id, $latestValuationByCompany);
 
@@ -126,15 +118,7 @@ class PartnerPortalController extends Controller
             ->latest('created_at')
             ->get();
 
-        $latestValuationByCompany = PortfolioValuation::query()
-            ->where('status', PortfolioValuation::STATUS_PUBLISHED)
-            ->orderByDesc('valuation_year')
-            ->orderByDesc('valuation_half')
-            ->orderByDesc('valuation_date')
-            ->orderByDesc('created_at')
-            ->get()
-            ->groupBy('company_id')
-            ->map(fn ($rows) => $rows->first());
+        $latestValuationByCompany = $this->latestValuationByCompanyForPartner((int) $investor_id);
 
         $data = $investments->map(function ($investment) use ($latestValuationByCompany) {
             $totalInvested = (float) $investment->getCurrentBalance();
@@ -253,15 +237,7 @@ class PartnerPortalController extends Controller
             ->latest('created_at')
             ->get();
 
-        $latestValuationByCompany = PortfolioValuation::query()
-            ->where('status', PortfolioValuation::STATUS_PUBLISHED)
-            ->orderByDesc('valuation_year')
-            ->orderByDesc('valuation_half')
-            ->orderByDesc('valuation_date')
-            ->orderByDesc('created_at')
-            ->get()
-            ->groupBy('company_id')
-            ->map(fn ($rows) => $rows->first());
+        $latestValuationByCompany = $this->latestValuationByCompanyForPartner((int) $investor_id);
 
         return response()->json([
             'data' => $investments->map(function ($investment) use ($latestValuationByCompany) {
@@ -469,8 +445,8 @@ class PartnerPortalController extends Controller
             ->where('status', 'Active')
             ->get();
 
-        $publishedValuations = PortfolioValuation::with('company')
-            ->where('status', PortfolioValuation::STATUS_PUBLISHED)
+        $publishedValuations = $this->publishedValuationsForPartner((int) $investor_id)
+            ->with('company')
             ->orderByDesc('valuation_year')
             ->orderByDesc('valuation_half')
             ->orderByDesc('valuation_date')
@@ -748,8 +724,8 @@ class PartnerPortalController extends Controller
             ->unique()
             ->values();
 
-        $query = PortfolioValuation::with('company')
-            ->where('status', PortfolioValuation::STATUS_PUBLISHED)
+        $query = $this->publishedValuationsForPartner((int) $investor_id)
+            ->with('company')
             ->whereIn('company_id', $partnerCompanyIds);
 
         if ($request->filled('company_id')) {
@@ -820,8 +796,8 @@ class PartnerPortalController extends Controller
             ->unique()
             ->values();
 
-        $query = PortfolioValuation::with('company')
-            ->where('status', PortfolioValuation::STATUS_PUBLISHED)
+        $query = $this->publishedValuationsForPartner((int) $investor_id)
+            ->with('company')
             ->whereIn('company_id', $partnerCompanyIds)
             ->latest('valuation_date')
             ->latest('created_at');
@@ -886,9 +862,9 @@ class PartnerPortalController extends Controller
             ->unique()
             ->values();
 
-        $valuation = PortfolioValuation::with('company')
+        $valuation = $this->publishedValuationsForPartner((int) $investor_id)
+            ->with('company')
             ->where('id', $valuation_id)
-            ->where('status', PortfolioValuation::STATUS_PUBLISHED)
             ->whereIn('company_id', $partnerCompanyIds)
             ->first();
 
@@ -990,6 +966,28 @@ class PartnerPortalController extends Controller
             ->value('exchange_rate');
 
         return $rate !== null ? (float) $rate : 1.0;
+    }
+
+    protected function publishedValuationsForPartner(int $investorId)
+    {
+        return PortfolioValuation::query()
+            ->where('status', PortfolioValuation::STATUS_PUBLISHED)
+            ->where(function ($query) use ($investorId) {
+                $query->where('investor_id', $investorId)
+                    ->orWhereNull('investor_id');
+            });
+    }
+
+    protected function latestValuationByCompanyForPartner(int $investorId)
+    {
+        return $this->publishedValuationsForPartner($investorId)
+            ->orderByDesc('valuation_year')
+            ->orderByDesc('valuation_half')
+            ->orderByDesc('valuation_date')
+            ->orderByDesc('created_at')
+            ->get()
+            ->groupBy('company_id')
+            ->map(fn ($rows) => $rows->first());
     }
 
     protected function currentOwnershipByCompanyForValuations(int $investorId, $latestValuationByCompany)

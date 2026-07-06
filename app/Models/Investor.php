@@ -32,4 +32,20 @@ class Investor extends Model
     {
         return $this->hasOne(User::class, 'email', 'email');
     }
+
+    /**
+     * Resolve the partner profile linked to a user email.
+     * Prefer active records, then newest row for deterministic behavior.
+     */
+    public static function resolveLinkedByEmail(string $email): ?self
+    {
+        return self::query()
+            ->where('email', $email)
+            ->orderByRaw(
+                "CASE WHEN status = ? THEN 0 ELSE 1 END",
+                [self::STATUS_ACTIVE]
+            )
+            ->orderByDesc('id')
+            ->first();
+    }
 }

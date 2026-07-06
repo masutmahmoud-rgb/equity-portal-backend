@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Models\Investor;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -27,6 +28,8 @@ class AuthController
             ]);
         }
 
+        $investor = Investor::resolveLinkedByEmail((string) $user->email);
+
         return response()->json([
             'message' => 'Login successful',
             'data' => [
@@ -35,6 +38,12 @@ class AuthController
                     'name' => $user->name,
                     'email' => $user->email,
                 ],
+                'partner' => $investor ? [
+                    'id' => $investor->id,
+                    'name' => $investor->name,
+                    'email' => $investor->email,
+                    'status' => $investor->status,
+                ] : null,
             ],
         ], 200);
     }
@@ -69,6 +78,23 @@ class AuthController
             ], 401);
         }
 
+        $investor = Investor::resolveLinkedByEmail((string) $user->email);
+
+        if (! $investor) {
+            return response()->json([
+                'message' => 'Credentials valid, but no linked partner profile found for this email.',
+                'data' => [
+                    'valid' => false,
+                    'user' => [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                    ],
+                    'partner' => null,
+                ],
+            ], 409);
+        }
+
         return response()->json([
             'message' => 'Credentials verified successfully',
             'data' => [
@@ -77,6 +103,12 @@ class AuthController
                     'id' => $user->id,
                     'name' => $user->name,
                     'email' => $user->email,
+                ],
+                'partner' => [
+                    'id' => $investor->id,
+                    'name' => $investor->name,
+                    'email' => $investor->email,
+                    'status' => $investor->status,
                 ],
             ],
         ], 200);

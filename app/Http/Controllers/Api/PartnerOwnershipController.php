@@ -192,7 +192,7 @@ class PartnerOwnershipController extends Controller
             ], 401);
         }
 
-        $investor = Investor::where('email', $user->email)->first();
+        $investor = Investor::resolveLinkedByEmail((string) $user->email);
         if (! $investor) {
             return response()->json([
                 'message' => 'Authenticated user is not linked to a partner profile.',
