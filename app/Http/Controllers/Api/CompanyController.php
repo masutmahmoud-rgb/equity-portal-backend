@@ -27,7 +27,7 @@ class CompanyController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate($this->validationRules());
+        $validated = $request->validate($this->validationRules($request));
         $validated['base_currency'] = strtoupper(trim((string) $validated['base_currency']));
 
         $company = Company::create($validated);
