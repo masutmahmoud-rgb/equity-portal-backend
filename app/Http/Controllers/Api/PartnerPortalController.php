@@ -16,6 +16,7 @@ use App\Models\CurrencySetting;
 use App\Models\ExchangeRate;
 use App\Models\OwnershipRegister;
 use App\Models\OwnershipRegisterItem;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
@@ -27,7 +28,7 @@ class PartnerPortalController extends Controller
      */
     public function profile($investor_id)
     {
-        $investor = Investor::find($investor_id);
+        $investor = $this->resolveLinkedInvestor($investor_id);
 
         if (!$investor) {
             return response()->json([
@@ -52,7 +53,7 @@ class PartnerPortalController extends Controller
      */
     public function companies($investor_id)
     {
-        $investor = Investor::find($investor_id);
+        $investor = $this->resolveLinkedInvestor($investor_id);
 
         if (!$investor) {
             return response()->json([
@@ -106,7 +107,7 @@ class PartnerPortalController extends Controller
      */
     public function portfolio($investor_id)
     {
-        $investor = Investor::find($investor_id);
+        $investor = $this->resolveLinkedInvestor($investor_id);
 
         if (!$investor) {
             return response()->json(['message' => 'Partner not found'], 404);
@@ -172,7 +173,7 @@ class PartnerPortalController extends Controller
      */
     public function investmentStatement($investor_id)
     {
-        $investor = Investor::find($investor_id);
+        $investor = $this->resolveLinkedInvestor($investor_id);
 
         if (!$investor) {
             return response()->json(['message' => 'Partner not found'], 404);
@@ -223,7 +224,7 @@ class PartnerPortalController extends Controller
      */
     public function investments($investor_id)
     {
-        $investor = Investor::find($investor_id);
+        $investor = $this->resolveLinkedInvestor($investor_id);
 
         if (!$investor) {
             return response()->json([
@@ -290,7 +291,7 @@ class PartnerPortalController extends Controller
      */
     public function statementOfAccount($investor_id)
     {
-        $investor = Investor::find($investor_id);
+        $investor = $this->resolveLinkedInvestor($investor_id);
 
         if (!$investor) {
             return response()->json([
@@ -407,7 +408,7 @@ class PartnerPortalController extends Controller
      */
     public function portfolioSummary($investor_id)
     {
-        $investor = Investor::find($investor_id);
+        $investor = $this->resolveLinkedInvestor($investor_id);
 
         if (!$investor) {
             return response()->json([
@@ -561,7 +562,7 @@ class PartnerPortalController extends Controller
      */
     public function financialData(Request $request, $investor_id)
     {
-        $investor = Investor::find($investor_id);
+        $investor = $this->resolveLinkedInvestor($investor_id);
 
         if (! $investor) {
             return response()->json([
@@ -609,7 +610,7 @@ class PartnerPortalController extends Controller
      */
     public function notifications($investor_id)
     {
-        $investor = Investor::find($investor_id);
+        $investor = $this->resolveLinkedInvestor($investor_id);
 
         if (! $investor) {
             return response()->json([
@@ -710,7 +711,7 @@ class PartnerPortalController extends Controller
      */
     public function latestValuation(Request $request, $investor_id)
     {
-        $investor = Investor::find($investor_id);
+        $investor = $this->resolveLinkedInvestor($investor_id);
 
         if (! $investor) {
             return response()->json([
@@ -782,7 +783,7 @@ class PartnerPortalController extends Controller
      */
     public function valuationHistory(Request $request, $investor_id)
     {
-        $investor = Investor::find($investor_id);
+        $investor = $this->resolveLinkedInvestor($investor_id);
 
         if (! $investor) {
             return response()->json([
@@ -848,7 +849,7 @@ class PartnerPortalController extends Controller
      */
     public function valuationShow($investor_id, $valuation_id)
     {
-        $investor = Investor::find($investor_id);
+        $investor = $this->resolveLinkedInvestor($investor_id);
 
         if (! $investor) {
             return response()->json([
@@ -912,7 +913,7 @@ class PartnerPortalController extends Controller
      */
     public function announcements($investor_id)
     {
-        $investor = Investor::find($investor_id);
+        $investor = $this->resolveLinkedInvestor($investor_id);
 
         if (! $investor) {
             return response()->json([
@@ -966,6 +967,26 @@ class PartnerPortalController extends Controller
             ->value('exchange_rate');
 
         return $rate !== null ? (float) $rate : 1.0;
+    }
+
+    protected function resolveLinkedInvestor($investorId): ?Investor
+    {
+        $id = (int) $investorId;
+        if ($id <= 0) {
+            return null;
+        }
+
+        $investor = Investor::find($id);
+        if ($investor) {
+            return $investor;
+        }
+
+        $user = User::find($id);
+        if (! $user || empty($user->email)) {
+            return null;
+        }
+
+        return Investor::resolveLinkedByEmail((string) $user->email);
     }
 
     protected function publishedValuationsForPartner(int $investorId)
