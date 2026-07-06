@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Investment;
 use App\Models\InvestmentTransaction;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
@@ -94,11 +95,47 @@ class InvestmentController extends Controller
      */
     public function destroy(Investment $investment)
     {
+        $dependencies = $this->investmentDependencyCounts((int) $investment->id);
+        $blocking = array_filter($dependencies, fn (int $count) => $count > 0);
+
+        if (! empty($blocking)) {
+            return response()->json([
+                'message' => 'Cannot delete investment because related records exist. Remove dependencies first.',
+                'code' => 'investment_has_dependencies',
+                'dependencies' => $blocking,
+            ], 409);
+        }
+
         $investment->delete();
 
         return response()->json([
             'message' => 'Investment deleted successfully.',
         ]);
+    }
+
+    protected function investmentDependencyCounts(int $investmentId): array
+    {
+        $counts = [];
+
+        if (Schema::hasTable('investment_transactions')) {
+            $counts['investment_transactions'] = (int) \DB::table('investment_transactions')
+                ->where('investment_id', $investmentId)
+                ->count();
+        }
+
+        if (Schema::hasTable('statement_of_accounts')) {
+            $counts['statement_of_accounts'] = (int) \DB::table('statement_of_accounts')
+                ->where('investment_id', $investmentId)
+                ->count();
+        }
+
+        if (Schema::hasTable('dividends')) {
+            $counts['dividends'] = (int) \DB::table('dividends')
+                ->where('investment_id', $investmentId)
+                ->count();
+        }
+
+        return $counts;
     }
 
     /**

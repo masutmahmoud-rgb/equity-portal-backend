@@ -4,9 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Company;
-use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
@@ -70,80 +68,61 @@ class CompanyController extends Controller
      */
     public function destroy(Company $company)
     {
-        try {
-            DB::transaction(function () use ($company) {
-                $companyId = (int) $company->id;
+        $dependencies = $this->companyDependencyCounts((int) $company->id);
+        $blocking = array_filter($dependencies, fn (int $count) => $count > 0);
 
-                if (Schema::hasTable('statement_of_accounts')) {
-                    DB::table('statement_of_accounts')->where('company_id', $companyId)->delete();
-                }
-
-                if (Schema::hasTable('capital_raises')) {
-                    $capitalRaiseIds = DB::table('capital_raises')
-                        ->where('company_id', $companyId)
-                        ->pluck('id');
-
-                    if ($capitalRaiseIds->isNotEmpty() && Schema::hasTable('capital_raise_contributions')) {
-                        DB::table('capital_raise_contributions')
-                            ->whereIn('capital_raise_id', $capitalRaiseIds)
-                            ->delete();
-                    }
-
-                    DB::table('capital_raises')->where('company_id', $companyId)->delete();
-                }
-
-                if (Schema::hasTable('ownership_registers')) {
-                    $ownershipRegisterIds = DB::table('ownership_registers')
-                        ->where('company_id', $companyId)
-                        ->pluck('id');
-
-                    if ($ownershipRegisterIds->isNotEmpty() && Schema::hasTable('ownership_register_items')) {
-                        DB::table('ownership_register_items')
-                            ->whereIn('ownership_register_id', $ownershipRegisterIds)
-                            ->delete();
-                    }
-
-                    DB::table('ownership_registers')->where('company_id', $companyId)->delete();
-                }
-
-                if (Schema::hasTable('initial_capitalizations')) {
-                    $initialCapitalizationIds = DB::table('initial_capitalizations')
-                        ->where('company_id', $companyId)
-                        ->pluck('id');
-
-                    if ($initialCapitalizationIds->isNotEmpty() && Schema::hasTable('initial_capitalization_items')) {
-                        DB::table('initial_capitalization_items')
-                            ->whereIn('initial_capitalization_id', $initialCapitalizationIds)
-                            ->delete();
-                    }
-
-                    DB::table('initial_capitalizations')->where('company_id', $companyId)->delete();
-                }
-
-                if (Schema::hasTable('portfolio_valuations')) {
-                    DB::table('portfolio_valuations')->where('company_id', $companyId)->delete();
-                }
-
-                if (Schema::hasTable('investments')) {
-                    DB::table('investments')->where('company_id', $companyId)->delete();
-                }
-
-                $company->delete();
-            });
-        } catch (QueryException $e) {
+        if (! empty($blocking)) {
             return response()->json([
-                'message' => 'Unable to delete company due to related records. Please remove dependent records and try again.',
-                'error' => $e->getCode(),
+                'message' => 'Cannot delete company because related records exist. Remove dependencies first.',
+                'code' => 'company_has_dependencies',
+                'dependencies' => $blocking,
             ], 409);
-        } catch (\Throwable $e) {
-            return response()->json([
-                'message' => 'Unexpected error while deleting company.',
-            ], 500);
         }
+
+        $company->delete();
 
         return response()->json([
             'message' => 'Company deleted successfully.',
         ]);
+    }
+
+    protected function companyDependencyCounts(int $companyId): array
+    {
+        $counts = [];
+
+        if (Schema::hasTable('investments')) {
+            $counts['investments'] = (int) \DB::table('investments')->where('company_id', $companyId)->count();
+        }
+
+        if (Schema::hasTable('statement_of_accounts')) {
+            $counts['statement_of_accounts'] = (int) \DB::table('statement_of_accounts')->where('company_id', $companyId)->count();
+        }
+
+        if (Schema::hasTable('dividends')) {
+            $counts['dividends'] = (int) \DB::table('dividends')->where('company_id', $companyId)->count();
+        }
+
+        if (Schema::hasTable('capital_raises')) {
+            $counts['capital_raises'] = (int) \DB::table('capital_raises')->where('company_id', $companyId)->count();
+        }
+
+        if (Schema::hasTable('ownership_registers')) {
+            $counts['ownership_registers'] = (int) \DB::table('ownership_registers')->where('company_id', $companyId)->count();
+        }
+
+        if (Schema::hasTable('initial_capitalizations')) {
+            $counts['initial_capitalizations'] = (int) \DB::table('initial_capitalizations')->where('company_id', $companyId)->count();
+        }
+
+        if (Schema::hasTable('portfolio_valuations')) {
+            $counts['portfolio_valuations'] = (int) \DB::table('portfolio_valuations')->where('company_id', $companyId)->count();
+        }
+
+        if (Schema::hasTable('financial_data')) {
+            $counts['financial_data'] = (int) \DB::table('financial_data')->where('company_id', $companyId)->count();
+        }
+
+        return $counts;
     }
 
     /**

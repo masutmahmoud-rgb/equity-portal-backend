@@ -5,9 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Investor;
 use App\Models\User;
-use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
@@ -124,61 +122,54 @@ class InvestorController extends Controller
      */
     public function destroy(Investor $investor)
     {
-        try {
-            DB::transaction(function () use ($investor) {
-                $investorId = (int) $investor->id;
+        $dependencies = $this->investorDependencyCounts((int) $investor->id);
+        $blocking = array_filter($dependencies, fn (int $count) => $count > 0);
 
-                if (Schema::hasTable('statement_of_accounts')) {
-                    DB::table('statement_of_accounts')->where('investor_id', $investorId)->delete();
-                }
-
-                if (Schema::hasTable('capital_raise_contributions')) {
-                    DB::table('capital_raise_contributions')->where('investor_id', $investorId)->delete();
-                }
-
-                if (Schema::hasTable('ownership_register_items')) {
-                    DB::table('ownership_register_items')->where('investor_id', $investorId)->delete();
-                }
-
-                if (Schema::hasTable('initial_capitalization_items')) {
-                    DB::table('initial_capitalization_items')->where('investor_id', $investorId)->delete();
-                }
-
-                if (Schema::hasTable('notifications') && Schema::hasColumn('notifications', 'target_investor_id')) {
-                    DB::table('notifications')->where('target_investor_id', $investorId)->update(['target_investor_id' => null]);
-                }
-
-                if (Schema::hasTable('announcements') && Schema::hasColumn('announcements', 'investor_id')) {
-                    DB::table('announcements')->where('investor_id', $investorId)->update(['investor_id' => null]);
-                }
-
-                if (Schema::hasTable('portfolio_valuations')) {
-                    DB::table('portfolio_valuations')->where('investor_id', $investorId)->delete();
-                }
-
-                if (Schema::hasTable('investments')) {
-                    DB::table('investments')->where('investor_id', $investorId)->delete();
-                }
-
-                // Delete associated user account
-                User::where('email', $investor->email)->delete();
-
-                $investor->delete();
-            });
-        } catch (QueryException $e) {
+        if (! empty($blocking)) {
             return response()->json([
-                'message' => 'Unable to delete investor due to related records. Please remove dependent records and try again.',
-                'error' => $e->getCode(),
+                'message' => 'Cannot delete partner because related records exist. Remove dependencies first.',
+                'code' => 'investor_has_dependencies',
+                'dependencies' => $blocking,
             ], 409);
-        } catch (\Throwable $e) {
-            return response()->json([
-                'message' => 'Unexpected error while deleting investor.',
-            ], 500);
         }
+
+        User::where('email', $investor->email)->delete();
+        $investor->delete();
 
         return response()->json([
             'message' => 'Investor deleted successfully.',
         ]);
+    }
+
+    protected function investorDependencyCounts(int $investorId): array
+    {
+        $counts = [];
+
+        if (Schema::hasTable('investments')) {
+            $counts['investments'] = (int) \DB::table('investments')->where('investor_id', $investorId)->count();
+        }
+
+        if (Schema::hasTable('statement_of_accounts')) {
+            $counts['statement_of_accounts'] = (int) \DB::table('statement_of_accounts')->where('investor_id', $investorId)->count();
+        }
+
+        if (Schema::hasTable('capital_raise_contributions')) {
+            $counts['capital_raise_contributions'] = (int) \DB::table('capital_raise_contributions')->where('investor_id', $investorId)->count();
+        }
+
+        if (Schema::hasTable('ownership_register_items')) {
+            $counts['ownership_register_items'] = (int) \DB::table('ownership_register_items')->where('investor_id', $investorId)->count();
+        }
+
+        if (Schema::hasTable('initial_capitalization_items')) {
+            $counts['initial_capitalization_items'] = (int) \DB::table('initial_capitalization_items')->where('investor_id', $investorId)->count();
+        }
+
+        if (Schema::hasTable('portfolio_valuations')) {
+            $counts['portfolio_valuations'] = (int) \DB::table('portfolio_valuations')->where('investor_id', $investorId)->count();
+        }
+
+        return $counts;
     }
 
     /**
