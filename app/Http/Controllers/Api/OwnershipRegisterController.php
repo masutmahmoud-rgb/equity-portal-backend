@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Investment;
 use App\Models\OwnershipRegister;
 use App\Models\OwnershipRegisterItem;
 use App\Models\PortfolioValuation;
@@ -14,10 +15,12 @@ class OwnershipRegisterController extends Controller
 {
     public function manualSet(Request $request)
     {
+        $this->normalizeManualSetPayload($request);
+
         $validated = $request->validate([
             'company_id' => ['required', 'exists:companies,id'],
             'investor_id' => ['required', 'exists:investors,id'],
-            'ownership_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
+            'ownership_percentage' => ['required', 'numeric', 'min:0', 'max:100', 'decimal:0,3'],
             'effective_date' => ['nullable', 'date'],
             'portfolio_valuation_id' => ['nullable', 'exists:portfolio_valuations,id'],
         ]);
@@ -54,10 +57,27 @@ class OwnershipRegisterController extends Controller
                 ->where('is_current', true)
                 ->first();
 
+            $requiredPartnerIds = $this->companyPartnerIds($companyId);
+            if (empty($requiredPartnerIds)) {
+                abort(422, 'Ownership update requires at least one active partner investment for this company.');
+            }
+
+            if (! in_array($investorId, $requiredPartnerIds, true)) {
+                abort(422, 'Selected partner has no active investment in the selected company.');
+            }
+
             $ownerships = [];
             if ($currentRegister) {
                 foreach ($currentRegister->items as $item) {
                     $ownerships[(int) $item->investor_id] = (float) $item->ownership_percentage;
+                }
+            }
+
+            // Keep exactly one ownership row per active partner in this company/period.
+            $ownerships = array_intersect_key($ownerships, array_flip($requiredPartnerIds));
+            foreach ($requiredPartnerIds as $requiredPartnerId) {
+                if (! array_key_exists($requiredPartnerId, $ownerships)) {
+                    $ownerships[$requiredPartnerId] = 0.0;
                 }
             }
 
@@ -101,6 +121,23 @@ class OwnershipRegisterController extends Controller
         ]);
     }
 
+    protected function normalizeManualSetPayload(Request $request): void
+    {
+        $normalized = [];
+
+        if (! $request->filled('investor_id') && $request->filled('partner_id')) {
+            $normalized['investor_id'] = $request->input('partner_id');
+        }
+
+        if (! $request->filled('ownership_percentage') && $request->filled('ownership')) {
+            $normalized['ownership_percentage'] = $request->input('ownership');
+        }
+
+        if (! empty($normalized)) {
+            $request->merge($normalized);
+        }
+    }
+
     public function index(Request $request)
     {
         $query = OwnershipRegister::with(['company', 'valuation', 'items.investor'])
@@ -127,6 +164,7 @@ class OwnershipRegisterController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate($this->rules());
+        $this->assertCompleteOwnershipRows((int) $validated['company_id'], $validated['ownerships']);
 
         $requestedStatus = $validated['status'] ?? OwnershipRegister::STATUS_DRAFT;
 
@@ -208,7 +246,7 @@ class OwnershipRegisterController extends Controller
             'status' => ['nullable', Rule::in(OwnershipRegister::STATUSES)],
             'ownerships' => ['required', 'array', 'min:1'],
             'ownerships.*.investor_id' => ['required', 'distinct', 'exists:investors,id'],
-            'ownerships.*.ownership_percentage' => ['required', 'numeric', 'min:0', 'max:100'],
+            'ownerships.*.ownership_percentage' => ['required', 'numeric', 'min:0', 'max:100', 'decimal:0,3'],
         ];
     }
 
@@ -217,6 +255,75 @@ class OwnershipRegisterController extends Controller
         if ((int) $valuation->company_id !== $companyId) {
             abort(422, 'Selected valuation does not belong to the selected company.');
         }
+    }
+
+    public function update(Request $request, OwnershipRegister $ownership_register)
+    {
+        $validated = $request->validate([
+            'ownerships' => ['required', 'array', 'min:1'],
+            'ownerships.*.investor_id' => ['required', 'distinct', 'exists:investors,id'],
+            'ownerships.*.ownership_percentage' => ['required', 'numeric', 'min:0', 'max:100', 'decimal:0,3'],
+        ]);
+        $this->assertCompleteOwnershipRows((int) $ownership_register->company_id, $validated['ownerships']);
+
+        $ownership_register->loadMissing(['items']);
+
+        DB::transaction(function () use ($ownership_register, $validated) {
+            // Delete existing items for this register
+            $ownership_register->items()->delete();
+
+            // Insert updated item percentages
+            foreach ($validated['ownerships'] as $ownership) {
+                OwnershipRegisterItem::create([
+                    'ownership_register_id' => $ownership_register->id,
+                    'investor_id' => (int) $ownership['investor_id'],
+                    'ownership_percentage' => (float) $ownership['ownership_percentage'],
+                ]);
+            }
+        });
+
+        return response()->json([
+            'data' => $this->formatRegister($ownership_register->fresh(['company', 'valuation', 'items.investor'])),
+        ]);
+    }
+
+    protected function assertCompleteOwnershipRows(int $companyId, array $ownershipRows): void
+    {
+        $requiredPartnerIds = $this->companyPartnerIds($companyId);
+        if (empty($requiredPartnerIds)) {
+            abort(422, 'Ownership register requires at least one active partner investment for this company.');
+        }
+
+        $providedPartnerIds = collect($ownershipRows)
+            ->pluck('investor_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $missing = array_values(array_diff($requiredPartnerIds, $providedPartnerIds));
+        $extra = array_values(array_diff($providedPartnerIds, $requiredPartnerIds));
+
+        if (! empty($missing) || ! empty($extra)) {
+            abort(422, sprintf(
+                'Ownership rows must include exactly one record for each active company partner. Missing partner IDs: [%s]. Unexpected partner IDs: [%s].',
+                implode(', ', $missing),
+                implode(', ', $extra)
+            ));
+        }
+    }
+
+    protected function companyPartnerIds(int $companyId): array
+    {
+        return Investment::query()
+            ->where('company_id', $companyId)
+            ->where('status', Investment::STATUS_ACTIVE)
+            ->distinct()
+            ->pluck('investor_id')
+            ->map(fn ($id) => (int) $id)
+            ->sort()
+            ->values()
+            ->all();
     }
 
     protected function formatRegister(OwnershipRegister $register): array
@@ -245,10 +352,10 @@ class OwnershipRegisterController extends Controller
                         'name' => $item->investor->name,
                         'email' => $item->investor->email,
                     ] : null,
-                    'ownership_percentage' => (float) $item->ownership_percentage,
+                    'ownership_percentage' => round((float) $item->ownership_percentage, 3),
                 ];
             })->values(),
-            'total_ownership' => round((float) $register->items->sum('ownership_percentage'), 4),
+            'total_ownership' => round((float) $register->items->sum('ownership_percentage'), 3),
             'created_at' => optional($register->created_at)->toIso8601String(),
             'updated_at' => optional($register->updated_at)->toIso8601String(),
         ];

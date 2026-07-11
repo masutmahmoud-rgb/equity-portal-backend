@@ -59,6 +59,7 @@ export default function CreateStatementOfAccount() {
             onClick={() => setTransactionType('Withdrawal')}
             style={{
               padding: '8px 16px',
+              marginRight: '10px',
               backgroundColor: transactionType === 'Withdrawal' ? '#007bff' : '#f0f0f0',
               color: transactionType === 'Withdrawal' ? 'white' : '#333',
               border: `2px solid ${transactionType === 'Withdrawal' ? '#007bff' : '#ddd'}`,
@@ -69,12 +70,28 @@ export default function CreateStatementOfAccount() {
           >
             Withdrawal
           </button>
+          <button
+            onClick={() => setTransactionType('Addition')}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: transactionType === 'Addition' ? '#007bff' : '#f0f0f0',
+              color: transactionType === 'Addition' ? 'white' : '#333',
+              border: `2px solid ${transactionType === 'Addition' ? '#007bff' : '#ddd'}`,
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontWeight: transactionType === 'Addition' ? 'bold' : 'normal',
+            }}
+          >
+            Addition
+          </button>
         </div>
 
         {transactionType === 'Dividend' ? (
           <DividendForm companies={companies} partners={partners} />
-        ) : (
+        ) : transactionType === 'Withdrawal' ? (
           <WithdrawalForm companies={companies} partners={partners} />
+        ) : (
+          <WithdrawalForm companies={companies} partners={partners} mode="Addition" />
         )}
       </div>
     </Layout>

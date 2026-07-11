@@ -20,10 +20,14 @@ export default function StatementOfAccountIndex() {
   const handleDelete = async (id) => {
     if (!confirm('Are you sure?')) return;
     try {
-      await fetch(`/api/statement-of-accounts/${id}`, { method: 'DELETE' });
+      const response = await fetch(`/api/statement-of-accounts/${id}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || 'Failed to delete record');
+      }
       // SWR will refetch automatically
     } catch (err) {
-      alert('Error deleting record');
+      alert(err.message || 'Error deleting record');
     }
   };
 
@@ -72,9 +76,11 @@ export default function StatementOfAccountIndex() {
                     <a href={`/statement-of-accounts/${account.id}/edit`} className="btn btn-sm btn-warning" style={{ marginRight: '5px' }}>
                       Edit
                     </a>
-                    <button onClick={() => handleDelete(account.id)} className="btn btn-sm btn-danger">
-                      Delete
-                    </button>
+                    {(account.transaction_type === 'Withdrawal' || account.transaction_type === 'Deposit') && (
+                      <button onClick={() => handleDelete(account.id)} className="btn btn-sm btn-danger">
+                        Delete
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

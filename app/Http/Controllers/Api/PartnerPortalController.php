@@ -16,6 +16,7 @@ use App\Models\CurrencySetting;
 use App\Models\ExchangeRate;
 use App\Models\OwnershipRegister;
 use App\Models\OwnershipRegisterItem;
+use App\Models\AdditionalInvestment;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -88,7 +89,7 @@ class PartnerPortalController extends Controller
                     'id' => $company->id,
                     'name' => $company->name,
                     'description' => $company->description ?? null,
-                    'ownership_percentage' => $ownership,
+                    'ownership_percentage' => $ownership !== null ? round((float) $ownership, 3) : null,
                     'total_invested' => $totalInvested,
                     'current_value' => $currentValue,
                     'profit' => $profit,
@@ -309,8 +310,19 @@ class PartnerPortalController extends Controller
         // Calculate running balance
         $runningBalance = 0;
         $ledger = $transactions->map(function ($transaction) use (&$runningBalance, $investor) {
-            // Credit: Dividend (positive), Debit: Withdrawal (negative)
+            // Credit: Dividend/Deposit(Credit), Debit: Withdrawal/Deposit(Debit)
             if ($transaction->transaction_type === StatementOfAccount::TYPE_DIVIDEND) {
+                $runningBalance += $transaction->amount;
+                $credit = $transaction->amount;
+                $debit = 0;
+            } elseif (
+                $transaction->transaction_type === StatementOfAccount::TYPE_DEPOSIT
+                && $transaction->entry_direction === StatementOfAccount::DIRECTION_DEBIT
+            ) {
+                $runningBalance -= $transaction->amount;
+                $credit = 0;
+                $debit = $transaction->amount;
+            } elseif ($transaction->transaction_type === StatementOfAccount::TYPE_DEPOSIT) {
                 $runningBalance += $transaction->amount;
                 $credit = $transaction->amount;
                 $debit = 0;
@@ -340,10 +352,19 @@ class PartnerPortalController extends Controller
                 'reference' => 'REF-' . str_pad($transaction->id, 6, '0', STR_PAD_LEFT),
                 'description' => $transaction->transaction_type === StatementOfAccount::TYPE_DIVIDEND
                     ? 'Dividend Payment from ' . ($company ? $company->name : 'Unknown Company')
-                    : 'Withdrawal Request to ' . ($transaction->bank_name ?? 'N/A'),
+                    : (
+                        $transaction->description
+                        ?: $transaction->notes
+                        ?: (
+                            $transaction->transaction_type === StatementOfAccount::TYPE_DEPOSIT
+                                ? 'Manual statement adjustment (' . ($transaction->entry_direction ?? 'N/A') . ')'
+                                : ('Withdrawal Request to ' . ($transaction->bank_name ?? 'N/A'))
+                        )
+                    ),
                 'credit' => $credit,
                 'debit' => $debit,
                 'running_balance' => $runningBalance,
+                'entry_direction' => $transaction->entry_direction,
                 'notes' => $transaction->notes,
                 'status' => $transaction->status,
                 'attachments' => $attachments,
@@ -354,9 +375,9 @@ class PartnerPortalController extends Controller
             ];
         });
 
-        // Calculate totals
-        $totalCredits = $transactions->where('transaction_type', StatementOfAccount::TYPE_DIVIDEND)->sum('amount');
-        $totalDebits = $transactions->where('transaction_type', StatementOfAccount::TYPE_WITHDRAWAL)->sum('amount');
+        // Calculate totals from computed ledger columns.
+        $totalCredits = (float) $ledger->sum(fn ($row) => (float) $row['credit']);
+        $totalDebits = (float) $ledger->sum(fn ($row) => (float) $row['debit']);
         $currentBalance = $totalCredits - $totalDebits;
 
         return response()->json([
@@ -493,7 +514,7 @@ class PartnerPortalController extends Controller
                 ] : null,
                 'currency' => $currencyCode,
                 'exchange_rate' => $exchangeRate,
-                'ownership_percentage' => $ownership,
+                'ownership_percentage' => $ownership !== null ? round((float) $ownership, 3) : null,
                 'total_invested' => $totalInvested,
                 'indicative_value' => $currentValue,
                 'current_value' => $currentValue,
@@ -511,6 +532,51 @@ class PartnerPortalController extends Controller
             ];
         })->values();
 
+        $additionalCards = AdditionalInvestment::query()
+            ->where('investor_id', (int) $investor->id)
+            ->where('status', AdditionalInvestment::STATUS_PUBLISHED)
+            ->orderByDesc('valuation_year')
+            ->orderByDesc('valuation_half')
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function (AdditionalInvestment $additional) use ($resolveRate, $reportingCurrency) {
+                $currencyCode = strtoupper((string) $reportingCurrency);
+                $exchangeRate = $resolveRate($currencyCode);
+                $totalInvested = (float) $additional->investment_amount;
+                $profit = (float) $additional->profit;
+                $currentValue = $totalInvested + $profit;
+                $roi = $totalInvested > 0 ? round(($profit / $totalInvested) * 100, 2) : null;
+
+                return [
+                    'company_id' => null,
+                    'company' => [
+                        'id' => null,
+                        'name' => $additional->card_label ?: ('Additional Investment ' . $additional->valuation_period),
+                    ],
+                    'currency' => $currencyCode,
+                    'exchange_rate' => $exchangeRate,
+                    'ownership_percentage' => null,
+                    'total_invested' => $totalInvested,
+                    'indicative_value' => $currentValue,
+                    'current_value' => $currentValue,
+                    'profit' => $profit,
+                    'roi_percentage' => $roi,
+                    'roi_period' => 'Semi-Annual',
+                    'valuation_period' => $additional->valuation_period,
+                    'valuation_date' => null,
+                    'notes' => $additional->notes,
+                    'source' => 'additional_investment',
+                    'converted' => [
+                        'total_invested' => $totalInvested * $exchangeRate,
+                        'indicative_value' => $currentValue * $exchangeRate,
+                        'profit' => $profit * $exchangeRate,
+                    ],
+                ];
+            })
+            ->values();
+
+        $investmentCards = $companyCards->concat($additionalCards)->values();
+
         $transactions = StatementOfAccount::where('investor_id', (int) $investor->id)
             ->with('company')
             ->get();
@@ -525,9 +591,9 @@ class PartnerPortalController extends Controller
             return $transaction->transaction_type === 'Dividend' ? $amount : -$amount;
         });
 
-        $totalInvestmentsReporting = (float) $companyCards->sum('converted.total_invested');
-        $lastDeclaredProfitReporting = (float) $companyCards->sum('converted.profit');
-        $portfolioValueReporting = (float) $companyCards->sum('converted.indicative_value');
+        $totalInvestmentsReporting = (float) $investmentCards->sum('converted.total_invested');
+        $lastDeclaredProfitReporting = (float) $investmentCards->sum('converted.profit');
+        $portfolioValueReporting = (float) $investmentCards->sum('converted.indicative_value');
 
         return response()->json([
             'data' => [
@@ -542,10 +608,11 @@ class PartnerPortalController extends Controller
                     'last_declared_profit' => round($lastDeclaredProfitReporting, 2),
                     'portfolio_value' => round($portfolioValueReporting, 2),
                 ],
-                'investment_cards' => $companyCards->map(function ($card) {
+                'investment_cards' => $investmentCards->map(function ($card) {
                     return [
                         'company' => $card['company'],
                         'currency' => $card['currency'],
+                        'source' => $card['source'] ?? 'company_valuation',
                         'ownership_percentage' => $card['ownership_percentage'],
                         'total_invested' => round((float) $card['total_invested'], 2),
                         'indicative_value' => $card['indicative_value'] !== null ? round((float) $card['indicative_value'], 2) : null,
@@ -981,18 +1048,19 @@ class PartnerPortalController extends Controller
             return null;
         }
 
-        // If route param is actually a user id, prefer resolving investor by user email.
+        // Primary path: route param is already an investor id.
+        $investor = Investor::find($id);
+        if ($investor) {
+            return $investor;
+        }
+
+        // Fallback path: route param may be a user id, resolve investor by linked email.
         $user = User::find($id);
         if ($user && ! empty($user->email)) {
             $mapped = Investor::resolveLinkedByEmail((string) $user->email);
             if ($mapped) {
                 return $mapped;
             }
-        }
-
-        $investor = Investor::find($id);
-        if ($investor) {
-            return $investor;
         }
 
         return null;

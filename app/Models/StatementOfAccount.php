@@ -8,6 +8,10 @@ class StatementOfAccount extends Model
 {
     public const TYPE_DIVIDEND = 'Dividend';
     public const TYPE_WITHDRAWAL = 'Withdrawal';
+    public const TYPE_DEPOSIT = 'Deposit';
+
+    public const DIRECTION_CREDIT = 'Credit';
+    public const DIRECTION_DEBIT = 'Debit';
 
     public const STATUS_PENDING = 'Pending';
     public const STATUS_PAID = 'Paid';
@@ -15,6 +19,12 @@ class StatementOfAccount extends Model
     public const TRANSACTION_TYPES = [
         self::TYPE_DIVIDEND,
         self::TYPE_WITHDRAWAL,
+        self::TYPE_DEPOSIT,
+    ];
+
+    public const ENTRY_DIRECTIONS = [
+        self::DIRECTION_CREDIT,
+        self::DIRECTION_DEBIT,
     ];
 
     public const STATUSES = [
@@ -28,9 +38,11 @@ class StatementOfAccount extends Model
         'investor_id',
         'source_dividend_id',
         'transaction_type',
+        'entry_direction',
         'amount',
         'status',
         'transaction_date',
+        'description',
         'notes',
         'attachment_paths',
         'bank_name',

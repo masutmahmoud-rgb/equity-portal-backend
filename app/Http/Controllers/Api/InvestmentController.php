@@ -83,7 +83,53 @@ class InvestmentController extends Controller
     {
         $validated = $request->validate($this->updateValidationRules());
 
-        $investment->update($validated);
+        $investment = DB::transaction(function () use ($investment, $validated) {
+            $updates = $validated;
+
+            if (array_key_exists('amount', $updates)) {
+                $newAmount = (float) $updates['amount'];
+
+                $initialTransaction = $investment->transactions()
+                    ->where('transaction_type', InvestmentTransaction::TYPE_INITIAL)
+                    ->orderBy('id')
+                    ->first();
+
+                if ($initialTransaction) {
+                    $initialPayload = [
+                        'amount' => $newAmount,
+                    ];
+
+                    if (array_key_exists('invested_at', $updates) && ! empty($updates['invested_at'])) {
+                        $initialPayload['transaction_date'] = $updates['invested_at'];
+                    }
+
+                    $initialTransaction->update($initialPayload);
+                } else {
+                    InvestmentTransaction::create([
+                        'investment_id' => $investment->id,
+                        'transaction_type' => InvestmentTransaction::TYPE_INITIAL,
+                        'source' => 'Manual',
+                        'status' => 'Posted',
+                        'amount' => $newAmount,
+                        'transaction_date' => $updates['invested_at'] ?? ($investment->invested_at?->toDateString() ?? now()->toDateString()),
+                        'notes' => 'Auto-created from investment edit',
+                        'is_read_only' => false,
+                    ]);
+                }
+            }
+
+            // Keep initial transaction date aligned if only invested_at changed.
+            if (array_key_exists('invested_at', $updates) && ! array_key_exists('amount', $updates) && ! empty($updates['invested_at'])) {
+                $investment->transactions()
+                    ->where('transaction_type', InvestmentTransaction::TYPE_INITIAL)
+                    ->limit(1)
+                    ->update(['transaction_date' => $updates['invested_at']]);
+            }
+
+            $investment->update($updates);
+
+            return $investment;
+        });
 
         return response()->json([
             'data' => $investment->load(['investor', 'company']),
@@ -162,6 +208,7 @@ class InvestmentController extends Controller
         return [
             'investor_id' => ['sometimes', 'integer', Rule::exists('investors', 'id')],
             'company_id' => ['sometimes', 'integer', Rule::exists('companies', 'id')],
+            'amount' => ['sometimes', 'numeric'],
             'status' => ['sometimes', 'string', Rule::in(Investment::STATUSES)],
             'notes' => 'nullable|string',
             'invested_at' => 'nullable|date',

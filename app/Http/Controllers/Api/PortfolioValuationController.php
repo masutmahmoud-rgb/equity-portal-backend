@@ -160,6 +160,7 @@ class PortfolioValuationController extends Controller
         $uniquePeriodRule = Rule::unique('portfolio_valuations')->where(function ($query) use ($request) {
             return $query
                 ->where('company_id', $request->input('company_id'))
+                ->where('investor_id', $request->input('investor_id', $request->input('partner_id')))
                 ->where('valuation_year', $request->input('valuation_year'))
                 ->where('valuation_half', $request->input('valuation_half'));
         });
@@ -187,6 +188,7 @@ class PortfolioValuationController extends Controller
             ->where(function ($query) use ($request) {
                 return $query
                     ->where('company_id', $request->input('company_id'))
+                    ->where('investor_id', $request->input('investor_id', $request->input('partner_id')))
                     ->where('valuation_year', $request->input('valuation_year'))
                     ->where('valuation_half', $request->input('valuation_half'));
             });

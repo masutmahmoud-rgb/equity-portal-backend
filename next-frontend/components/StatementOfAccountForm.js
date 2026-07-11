@@ -11,9 +11,11 @@ export default function StatementOfAccountForm({ companies = [], investors = [],
     investment_id: '',
     investor_id: '',
     transaction_type: 'Dividend',
+    entry_direction: 'Credit',
     amount: '',
     status: 'Pending',
     transaction_date: new Date().toISOString().split('T')[0],
+    description: '',
     notes: '',
   });
 
@@ -187,9 +189,27 @@ export default function StatementOfAccountForm({ companies = [], investors = [],
         >
           <option value="Dividend">Dividend</option>
           <option value="Withdrawal">Withdrawal</option>
+          <option value="Deposit">Deposit</option>
         </select>
         {errors.transaction_type && <p style={{ color: 'red', fontSize: '0.9em' }}>{errors.transaction_type[0]}</p>}
       </div>
+
+      {formData.transaction_type === 'Deposit' && (
+        <div style={{ marginBottom: '15px' }}>
+          <label style={{ fontWeight: 'bold' }}>Direction *</label>
+          <select
+            name="entry_direction"
+            value={formData.entry_direction}
+            onChange={handleInputChange}
+            required
+            style={{ width: '100%', padding: '8px', borderColor: errors.entry_direction ? 'red' : '#ccc', border: '1px solid', borderRadius: '4px' }}
+          >
+            <option value="Credit">Credit</option>
+            <option value="Debit">Debit</option>
+          </select>
+          {errors.entry_direction && <p style={{ color: 'red', fontSize: '0.9em' }}>{errors.entry_direction[0]}</p>}
+        </div>
+      )}
 
       <div style={{ marginBottom: '15px' }}>
         <label style={{ fontWeight: 'bold' }}>Amount *</label>
@@ -232,6 +252,17 @@ export default function StatementOfAccountForm({ companies = [], investors = [],
           style={{ width: '100%', padding: '8px', borderColor: errors.transaction_date ? 'red' : '#ccc', border: '1px solid', borderRadius: '4px' }}
         />
         {errors.transaction_date && <p style={{ color: 'red', fontSize: '0.9em' }}>{errors.transaction_date[0]}</p>}
+      </div>
+
+      <div style={{ marginBottom: '15px' }}>
+        <label>Description</label>
+        <textarea
+          name="description"
+          value={formData.description}
+          onChange={handleInputChange}
+          style={{ width: '100%', padding: '8px', minHeight: '80px', border: '1px solid #ccc', borderRadius: '4px' }}
+        />
+        {errors.description && <p style={{ color: 'red', fontSize: '0.9em' }}>{errors.description[0]}</p>}
       </div>
 
       <div style={{ marginBottom: '15px' }}>

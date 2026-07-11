@@ -40,6 +40,13 @@ export default function PartnerPortalDashboard() {
     return `${Number(amount).toLocaleString()} ${currency}`;
   };
 
+  const formatPercentage = (value) => {
+    if (value === null || value === undefined) return '-';
+    const numeric = Number(value);
+    if (Number.isNaN(numeric)) return '-';
+    return `${numeric.toFixed(3)}%`;
+  };
+
   return (
     <PartnerPortalLayout investorId={investor_id || ''} title={`Partner Dashboard - ${payload?.investor?.name || ''}`}>
       {!summary ? (
@@ -67,6 +74,7 @@ export default function PartnerPortalDashboard() {
                       <ValueCard label="Total Invested" value={formatCurrency(card.total_invested, card.currency || reportingCurrency)} />
                       <ValueCard label="Indicative Value" value={formatCurrency(card.indicative_value, card.currency || reportingCurrency)} />
                       <ValueCard label="Profit" value={formatCurrency(card.profit, card.currency || reportingCurrency)} />
+                      <ValueCard label="Ownership" value={formatPercentage(card.ownership_percentage)} />
                       <ValueCard label="ROI (Semi-Annual)" value={card.roi_percentage === null ? '-' : `${card.roi_percentage}%`} />
                       <ValueCard label="Valuation Period" value={card.valuation_period || '-'} />
                     </div>

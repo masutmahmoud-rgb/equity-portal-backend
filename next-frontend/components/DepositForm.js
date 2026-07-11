@@ -1,22 +1,19 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 
-export default function WithdrawalForm({ companies = [], partners = [], existingRecord = null, mode = 'Withdrawal' }) {
+export default function DepositForm({ companies = [], partners = [], existingRecord = null }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const [files, setFiles] = useState([]);
-  const isAddition = mode === 'Addition';
-  const actionLabel = isAddition ? 'Addition' : 'Withdrawal';
   const [formData, setFormData] = useState(existingRecord || {
     company_id: '',
     investor_id: '',
     amount: '',
+    entry_direction: 'Credit',
     status: 'Pending',
     transaction_date: new Date().toISOString().split('T')[0],
+    description: '',
     notes: '',
-    bank_name: '',
-    transfer_reference: '',
   });
 
   const handleInputChange = (e) => {
@@ -24,20 +21,16 @@ export default function WithdrawalForm({ companies = [], partners = [], existing
     setFormData({ ...formData, [name]: value });
   };
 
-  const handleFileChange = (e) => {
-    setFiles(Array.from(e.target.files || []));
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setErrors({});
 
-    // Client-side validation for required fields
     const clientErrors = {};
     if (!formData.company_id) clientErrors.company_id = ['Company is required'];
     if (!formData.investor_id) clientErrors.investor_id = ['Partner is required'];
     if (!formData.amount) clientErrors.amount = ['Amount is required'];
+    if (!formData.entry_direction) clientErrors.entry_direction = ['Direction is required'];
     if (!formData.transaction_date) clientErrors.transaction_date = ['Transaction date is required'];
 
     if (Object.keys(clientErrors).length > 0) {
@@ -51,29 +44,16 @@ export default function WithdrawalForm({ companies = [], partners = [], existing
       payload.append('company_id', formData.company_id);
       payload.append('investor_id', formData.investor_id);
       payload.append('amount', formData.amount);
+      payload.append('entry_direction', formData.entry_direction);
       payload.append('status', formData.status);
       payload.append('transaction_date', formData.transaction_date);
-      payload.append('transaction_type', isAddition ? 'Deposit' : 'Withdrawal');
-      if (isAddition) {
-        // Addition should always increase partner balance.
-        payload.append('entry_direction', 'Credit');
+      payload.append('transaction_type', 'Deposit');
+
+      if (formData.description) {
+        payload.append('description', formData.description);
       }
-      
       if (formData.notes) {
         payload.append('notes', formData.notes);
-      }
-      if (formData.bank_name) {
-        payload.append('bank_name', formData.bank_name);
-      }
-      if (formData.transfer_reference) {
-        payload.append('transfer_reference', formData.transfer_reference);
-      }
-
-      // Add attachments
-      if (files.length > 0) {
-        files.forEach((file, index) => {
-          payload.append(`attachments[${index}]`, file);
-        });
       }
 
       const method = 'POST';
@@ -162,6 +142,21 @@ export default function WithdrawalForm({ companies = [], partners = [], existing
       </div>
 
       <div style={{ marginBottom: '15px' }}>
+        <label style={{ fontWeight: 'bold' }}>Direction *</label>
+        <select
+          name="entry_direction"
+          value={formData.entry_direction}
+          onChange={handleInputChange}
+          required
+          style={{ width: '100%', padding: '8px', borderColor: errors.entry_direction ? 'red' : '#ccc', border: '1px solid', borderRadius: '4px' }}
+        >
+          <option value="Credit">Credit (adds to balance)</option>
+          <option value="Debit">Debit (reduces balance)</option>
+        </select>
+        {errors.entry_direction && <p style={{ color: 'red', fontSize: '0.9em' }}>{errors.entry_direction[0]}</p>}
+      </div>
+
+      <div style={{ marginBottom: '15px' }}>
         <label style={{ fontWeight: 'bold' }}>Status *</label>
         <select
           name="status"
@@ -190,29 +185,15 @@ export default function WithdrawalForm({ companies = [], partners = [], existing
       </div>
 
       <div style={{ marginBottom: '15px' }}>
-        <label>Bank Name</label>
-        <input
-          type="text"
-          name="bank_name"
-          value={formData.bank_name}
+        <label style={{ fontWeight: 'bold' }}>Description</label>
+        <textarea
+          name="description"
+          value={formData.description}
           onChange={handleInputChange}
-          style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+          style={{ width: '100%', padding: '8px', minHeight: '70px', border: '1px solid #ccc', borderRadius: '4px' }}
+          placeholder="This text appears in partner statement description"
         />
-        <p style={{ fontSize: '0.85em', color: '#666', marginTop: '3px' }}>Optional</p>
-        {errors.bank_name && <p style={{ color: 'red', fontSize: '0.9em' }}>{errors.bank_name[0]}</p>}
-      </div>
-
-      <div style={{ marginBottom: '15px' }}>
-        <label>Transfer Reference</label>
-        <input
-          type="text"
-          name="transfer_reference"
-          value={formData.transfer_reference}
-          onChange={handleInputChange}
-          style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-        />
-        <p style={{ fontSize: '0.85em', color: '#666', marginTop: '3px' }}>Optional</p>
-        {errors.transfer_reference && <p style={{ color: 'red', fontSize: '0.9em' }}>{errors.transfer_reference[0]}</p>}
+        {errors.description && <p style={{ color: 'red', fontSize: '0.9em' }}>{errors.description[0]}</p>}
       </div>
 
       <div style={{ marginBottom: '15px' }}>
@@ -221,32 +202,17 @@ export default function WithdrawalForm({ companies = [], partners = [], existing
           name="notes"
           value={formData.notes}
           onChange={handleInputChange}
-          style={{ width: '100%', padding: '8px', minHeight: '80px', border: '1px solid #ccc', borderRadius: '4px' }}
+          style={{ width: '100%', padding: '8px', minHeight: '70px', border: '1px solid #ccc', borderRadius: '4px' }}
         />
         {errors.notes && <p style={{ color: 'red', fontSize: '0.9em' }}>{errors.notes[0]}</p>}
       </div>
 
-      <div style={{ marginBottom: '15px' }}>
-        <label>Attachments</label>
-        <input
-          type="file"
-          multiple
-          onChange={handleFileChange}
-          style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-        />
-        <p style={{ fontSize: '0.9em', color: '#666' }}>
-          Max 10MB per file. {files.length} file(s) selected.
-        </p>
-        {errors.attachments && <p style={{ color: 'red', fontSize: '0.9em' }}>{errors.attachments[0]}</p>}
-        {errors['attachments.0'] && <p style={{ color: 'red', fontSize: '0.9em' }}>File upload failed. Contact support if this persists.</p>}
-      </div>
-
       <div style={{ marginBottom: '15px', paddingTop: '10px' }}>
-        <button 
-          type="submit" 
+        <button
+          type="submit"
           disabled={loading || !formData.company_id || !formData.investor_id || !formData.amount}
-          style={{ 
-            padding: '10px 20px', 
+          style={{
+            padding: '10px 20px',
             cursor: loading ? 'not-allowed' : 'pointer',
             backgroundColor: (loading || !formData.company_id || !formData.investor_id || !formData.amount) ? '#ccc' : '#007bff',
             color: 'white',
@@ -255,12 +221,12 @@ export default function WithdrawalForm({ companies = [], partners = [], existing
             marginRight: '10px',
           }}
         >
-          {loading ? 'Creating...' : `Create ${actionLabel}`}
+          {loading ? 'Creating...' : 'Create Deposit'}
         </button>
-        <a 
-          href="/statement-of-accounts" 
-          style={{ 
-            padding: '10px 20px', 
+        <a
+          href="/statement-of-accounts"
+          style={{
+            padding: '10px 20px',
             textDecoration: 'none',
             color: '#007bff',
             cursor: 'pointer',

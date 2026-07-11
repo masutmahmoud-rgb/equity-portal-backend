@@ -43,55 +43,38 @@ class StatementOfAccountController extends Controller
             'status' => ['nullable', 'string', Rule::in(StatementOfAccount::STATUSES)],
         ]);
 
-        $investments = \App\Models\Investment::where('company_id', $data['company_id'])->get();
-        $totalInvested = $investments->sum(function ($i) { return (float) $i->amount; });
-
-        if ($totalInvested <= 0) {
-            return response()->json(['message' => 'No investments found for company or total invested is zero.'], 422);
-        }
-
-        $created = [];
-        $remaining = (float) $data['total_amount'];
-        $count = $investments->count();
-        $i = 0;
-
-        foreach ($investments as $investment) {
-            $i++;
-            if ($i === $count) {
-                // last one: assign remaining to avoid rounding loss
-                $share = round($remaining, 2);
-            } else {
-                $share = round(((float) $investment->amount / $totalInvested) * (float) $data['total_amount'], 2);
-                $remaining -= $share;
-            }
-
-            $record = StatementOfAccount::create([
-                'company_id' => $data['company_id'],
-                'investment_id' => $investment->id,
-                'investor_id' => $investment->investor_id,
-                'transaction_type' => StatementOfAccount::TYPE_DIVIDEND,
-                'amount' => $share,
-                'status' => $data['status'] ?? StatementOfAccount::STATUS_PENDING,
-                'transaction_date' => $data['transaction_date'],
-                'notes' => $data['notes'] ?? null,
-            ]);
-
-            $created[] = $this->loadRelations($record);
-        }
+        $created = $this->createCompanyWideDividendStatements([
+            'company_id' => $data['company_id'],
+            'amount' => $data['total_amount'],
+            'status' => $data['status'] ?? StatementOfAccount::STATUS_PENDING,
+            'transaction_date' => $data['transaction_date'],
+            'description' => $data['notes'] ?? null,
+            'notes' => $data['notes'] ?? null,
+        ]);
 
         return response()->json(['data' => $created], 201);
     }
 
     public function store(Request $request)
     {
+        $this->normalizeDepositDirection($request);
         $validated = $request->validate($this->validationRules($request));
         $validated = $this->resolveInvestmentId($validated);
         $this->validateAttachments($validated);
 
-        // attachments only allowed for withdrawals
+        if ($this->shouldDistributeDividend($request, $validated)) {
+            $created = $this->createCompanyWideDividendStatements($validated);
+
+            return response()->json([
+                'data' => $created,
+            ], 201);
+        }
+
+        // Attachments are allowed for manual statement entries (Withdrawal/Deposit),
+        // but not for generated dividend declaration payloads.
         if ($request->hasFile('attachments')) {
-            if (($validated['transaction_type'] ?? null) !== StatementOfAccount::TYPE_WITHDRAWAL) {
-                return response()->json(['message' => 'Attachments are only allowed for withdrawal transactions.'], 422);
+            if (! in_array(($validated['transaction_type'] ?? null), [StatementOfAccount::TYPE_WITHDRAWAL, StatementOfAccount::TYPE_DEPOSIT], true)) {
+                return response()->json(['message' => 'Attachments are only allowed for withdrawal or addition transactions.'], 422);
             }
 
             $paths = [];
@@ -134,14 +117,16 @@ class StatementOfAccountController extends Controller
 
     public function update(Request $request, StatementOfAccount $statement_of_account)
     {
+        $this->normalizeDepositDirection($request, $statement_of_account);
         $validated = $request->validate($this->validationRules($request));
         $validated = $this->resolveInvestmentId($validated, $statement_of_account);
         $this->validateAttachments($validated, $statement_of_account);
 
         // Keep existing attachments unless new ones are uploaded
         if ($request->hasFile('attachments')) {
-            if (($validated['transaction_type'] ?? null) !== StatementOfAccount::TYPE_WITHDRAWAL) {
-                return response()->json(['message' => 'Attachments are only allowed for withdrawal transactions.'], 422);
+            $transactionType = $validated['transaction_type'] ?? $statement_of_account->transaction_type;
+            if (! in_array($transactionType, [StatementOfAccount::TYPE_WITHDRAWAL, StatementOfAccount::TYPE_DEPOSIT], true)) {
+                return response()->json(['message' => 'Attachments are only allowed for withdrawal or addition transactions.'], 422);
             }
 
             $existingPaths = $statement_of_account->attachment_paths ?? [];
@@ -195,32 +180,45 @@ class StatementOfAccountController extends Controller
 
     public function destroy(StatementOfAccount $statement_of_account)
     {
-        // Statements are read-only and cannot be deleted directly
-        // Delete the underlying transaction (Dividend/Withdrawal) instead
+        if (! in_array($statement_of_account->transaction_type, [StatementOfAccount::TYPE_WITHDRAWAL, StatementOfAccount::TYPE_DEPOSIT], true)) {
+            // Dividend statements are generated records and stay read-only.
+            return response()->json([
+                'message' => 'Dividend statements are read-only and cannot be deleted directly.',
+            ], 403);
+        }
+
+        $this->deleteStatementWithAttachments($statement_of_account);
+
         return response()->json([
-            'message' => 'Statements are read-only. Delete the underlying transaction instead.',
-        ], 403);
+            'message' => 'Statement entry deleted successfully.',
+        ]);
     }
 
     public function withdrawalsDestroy(StatementOfAccount $statement_of_account)
     {
         $this->ensureWithdrawal($statement_of_account);
 
-        return $this->destroy($statement_of_account);
+        $this->deleteStatementWithAttachments($statement_of_account);
+
+        return response()->json([
+            'message' => 'Withdrawal deleted successfully.',
+        ]);
     }
 
     protected function validationRules(Request $request): array
     {
         $required = $request->isMethod('patch') ? 'sometimes' : 'required';
 
-        return [
+        $rules = [
             'company_id' => [$required, 'integer', Rule::exists('companies', 'id')],
             'investment_id' => ['nullable', 'integer', Rule::exists('investments', 'id')],
             'investor_id' => [$required, 'integer', Rule::exists('investors', 'id')],
             'transaction_type' => [$required, 'string', Rule::in(StatementOfAccount::TRANSACTION_TYPES)],
+            'entry_direction' => ['nullable', 'string', Rule::in(StatementOfAccount::ENTRY_DIRECTIONS)],
             'amount' => [$required, 'numeric', 'min:0.01'],
             'status' => [$required, 'string', Rule::in(StatementOfAccount::STATUSES)],
             'transaction_date' => [$required, 'date'],
+            'description' => 'nullable|string',
             'notes' => 'nullable|string',
             'bank_name' => 'nullable|string',
             'transfer_reference' => 'nullable|string',
@@ -229,15 +227,33 @@ class StatementOfAccountController extends Controller
             'attachment_paths' => ['nullable', 'array'],
             'attachment_paths.*' => ['string'],
         ];
+
+        return $rules;
+    }
+
+    protected function normalizeDepositDirection(Request $request, ?StatementOfAccount $existing = null): void
+    {
+        $transactionType = $request->input('transaction_type', $existing?->transaction_type);
+        $entryDirection = $request->input('entry_direction');
+
+        if ($transactionType === StatementOfAccount::TYPE_DEPOSIT && empty($entryDirection)) {
+            // Addition/Deposit entries should increase partner balance by default.
+            $request->merge([
+                'entry_direction' => StatementOfAccount::DIRECTION_CREDIT,
+            ]);
+        }
     }
 
     public function validateAttachments(array $validated, ?StatementOfAccount $existing = null): void
     {
         $transactionType = $validated['transaction_type'] ?? $existing?->transaction_type;
-        if (request()->hasFile('attachments') && $transactionType !== StatementOfAccount::TYPE_WITHDRAWAL) {
+        if (
+            request()->hasFile('attachments')
+            && ! in_array($transactionType, [StatementOfAccount::TYPE_WITHDRAWAL, StatementOfAccount::TYPE_DEPOSIT], true)
+        ) {
             throw new \Illuminate\Validation\ValidationException(
                 \Illuminate\Validation\Validator::make([], []),
-                abort(422, 'Attachments are only allowed for withdrawal transactions.')
+                abort(422, 'Attachments are only allowed for withdrawal or addition transactions.')
             );
         }
     }
@@ -309,5 +325,75 @@ class StatementOfAccountController extends Controller
         }
 
         return [trim($rawPaths)];
+    }
+
+    protected function deleteStatementWithAttachments(StatementOfAccount $statement): void
+    {
+        $paths = $this->normalizeAttachmentPaths($statement->attachment_paths ?? []);
+
+        foreach ($paths as $path) {
+            if (Storage::disk('local')->exists($path)) {
+                Storage::disk('local')->delete($path);
+            }
+        }
+
+        $statement->delete();
+    }
+
+    protected function shouldDistributeDividend(Request $request, array $validated): bool
+    {
+        if (($validated['transaction_type'] ?? null) !== StatementOfAccount::TYPE_DIVIDEND) {
+            return false;
+        }
+
+        if (! $request->has('distribute_to_all_partners')) {
+            return true;
+        }
+
+        return filter_var($request->input('distribute_to_all_partners'), FILTER_VALIDATE_BOOLEAN);
+    }
+
+    protected function createCompanyWideDividendStatements(array $payload): array
+    {
+        $investments = \App\Models\Investment::where('company_id', $payload['company_id'])
+            ->where('status', Investment::STATUS_ACTIVE)
+            ->get();
+
+        $totalInvested = $investments->sum(fn ($row) => (float) $row->amount);
+
+        if ($totalInvested <= 0 || $investments->isEmpty()) {
+            abort(422, 'No active investments found for company or total invested is zero.');
+        }
+
+        $created = [];
+        $remaining = round((float) $payload['amount'], 2);
+        $count = $investments->count();
+
+        foreach ($investments->values() as $index => $investment) {
+            if ($index === $count - 1) {
+                // Last row receives remainder to avoid rounding drift.
+                $share = round($remaining, 2);
+            } else {
+                $share = round(((float) $investment->amount / $totalInvested) * (float) $payload['amount'], 2);
+                $remaining = round($remaining - $share, 2);
+            }
+
+            $record = StatementOfAccount::create([
+                'company_id' => (int) $payload['company_id'],
+                'investment_id' => $investment->id,
+                'investor_id' => $investment->investor_id,
+                'transaction_type' => StatementOfAccount::TYPE_DIVIDEND,
+                'entry_direction' => null,
+                'amount' => $share,
+                'status' => $payload['status'] ?? StatementOfAccount::STATUS_PENDING,
+                'transaction_date' => $payload['transaction_date'],
+                'description' => $payload['description'] ?? null,
+                'notes' => $payload['notes'] ?? null,
+            ]);
+
+            $created[] = $this->loadRelations($record);
+        }
+
+        return $created;
     }
 }

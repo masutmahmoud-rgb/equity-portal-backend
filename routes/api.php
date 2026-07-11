@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\PartnerRetainedEarningsController;
 use App\Http\Controllers\Api\OwnershipRegisterController;
 use App\Http\Controllers\Api\PartnerOwnershipController;
 use App\Http\Controllers\Api\CapitalRaiseController;
+use App\Http\Controllers\Api\AdditionalInvestmentController;
 
 Route::apiResource('companies', CompanyController::class);
 Route::apiResource('investors', InvestorController::class);
@@ -63,14 +64,18 @@ Route::apiResource('capital-events/capital-raises', CapitalRaiseController::clas
     ->only(['index', 'store', 'show', 'update', 'destroy']);
 Route::post('capital-events/capital-raises/review', [CapitalRaiseController::class, 'review'])->name('capital-events.capital-raises.review');
 Route::post('capital-events/capital-raises/{capital_raise}/publish', [CapitalRaiseController::class, 'publish'])->name('capital-events.capital-raises.publish');
-Route::apiResource('ownership-registers', OwnershipRegisterController::class)->only(['index', 'store', 'show']);
+Route::apiResource('additional-investments', AdditionalInvestmentController::class);
+Route::apiResource('ownership-registers', OwnershipRegisterController::class)->only(['index', 'store', 'show', 'update']);
 Route::post('ownership-registers/{ownership_register}/publish', [OwnershipRegisterController::class, 'publish'])->name('ownership-registers.publish');
 Route::post('ownership-registers/manual-set', [OwnershipRegisterController::class, 'manualSet'])->name('ownership-registers.manual-set');
+Route::match(['put', 'patch'], 'ownership-registers/manual-set', [OwnershipRegisterController::class, 'manualSet'])->name('ownership-registers.manual-set.update');
 Route::get('ownership-records', [OwnershipRegisterController::class, 'index'])->name('ownership-records.index');
 Route::post('ownership-records', [OwnershipRegisterController::class, 'store'])->name('ownership-records.store');
 Route::get('ownership-records/{ownership_register}', [OwnershipRegisterController::class, 'show'])->name('ownership-records.show');
+Route::match(['put', 'patch'], 'ownership-records/{ownership_register}', [OwnershipRegisterController::class, 'update'])->name('ownership-records.update');
 Route::post('ownership-records/{ownership_register}/publish', [OwnershipRegisterController::class, 'publish'])->name('ownership-records.publish');
 Route::post('ownership-records/manual-set', [OwnershipRegisterController::class, 'manualSet'])->name('ownership-records.manual-set');
+Route::match(['put', 'patch'], 'ownership-records/manual-set', [OwnershipRegisterController::class, 'manualSet'])->name('ownership-records.manual-set.update');
 Route::apiResource('announcements', AnnouncementController::class);
 Route::get('currency-settings', [CurrencySettingController::class, 'index']);
 Route::put('currency-settings', [CurrencySettingController::class, 'update']);

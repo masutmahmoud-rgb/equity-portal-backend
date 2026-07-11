@@ -300,7 +300,7 @@
 
                 <div class="field">
                     <label for="ownership">Ownership Percentage</label>
-                    <input id="ownership" type="number" min="0" max="100" step="0.0001" placeholder="Ex: 12.5">
+                    <input id="ownership" type="number" min="0" max="100" step="0.001" placeholder="Ex: 12.345">
                 </div>
 
                 <div class="field">
@@ -338,7 +338,11 @@
     function updatePreview() {
         const companyText = companyEl.options[companyEl.selectedIndex]?.text || 'No company selected';
         const partnerText = partnerEl.options[partnerEl.selectedIndex]?.text || 'No partner selected';
-        const ownershipText = ownershipEl.value ? ownershipEl.value + '%' : 'No percentage';
+        const ownershipValue = ownershipEl.value;
+        const ownershipNumber = Number(ownershipValue);
+        const ownershipText = ownershipValue !== '' && !Number.isNaN(ownershipNumber)
+            ? ownershipNumber.toFixed(3) + '%'
+            : 'No percentage';
         const effectiveText = effectiveEl.value || 'Today';
 
         previewEl.textContent = 'Will set ' + ownershipText + ' for ' + partnerText + ' in ' + companyText + ' effective ' + effectiveText + '.';
@@ -394,10 +398,16 @@
             return;
         }
 
+        const ownershipPrecision = ownership.includes('.') ? ownership.split('.')[1].length : 0;
+        if (ownershipPrecision > 3) {
+            setStatus('Ownership can have up to 3 decimal places only.', 'err');
+            return;
+        }
+
         const payload = {
             company_id: Number(companyId),
             investor_id: Number(partnerId),
-            ownership_percentage: ownershipNumber
+            ownership_percentage: Number(ownershipNumber.toFixed(3))
         };
 
         if (effectiveEl.value) {
