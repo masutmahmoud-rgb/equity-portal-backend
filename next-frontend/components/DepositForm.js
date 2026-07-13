@@ -5,15 +5,18 @@ export default function DepositForm({ companies = [], partners = [], existingRec
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const [formData, setFormData] = useState(existingRecord || {
+  const [formData, setFormData] = useState({
     company_id: '',
     investor_id: '',
     amount: '',
+    currency: 'EGP',
+    exchange_rate: '1',
     entry_direction: 'Credit',
     status: 'Pending',
     transaction_date: new Date().toISOString().split('T')[0],
     description: '',
     notes: '',
+    ...(existingRecord || {}),
   });
 
   const handleInputChange = (e) => {
@@ -30,6 +33,8 @@ export default function DepositForm({ companies = [], partners = [], existingRec
     if (!formData.company_id) clientErrors.company_id = ['Company is required'];
     if (!formData.investor_id) clientErrors.investor_id = ['Partner is required'];
     if (!formData.amount) clientErrors.amount = ['Amount is required'];
+    if (!formData.currency) clientErrors.currency = ['Currency is required'];
+    if (!formData.exchange_rate || Number(formData.exchange_rate) <= 0) clientErrors.exchange_rate = ['Exchange rate must be greater than zero'];
     if (!formData.entry_direction) clientErrors.entry_direction = ['Direction is required'];
     if (!formData.transaction_date) clientErrors.transaction_date = ['Transaction date is required'];
 
@@ -44,6 +49,8 @@ export default function DepositForm({ companies = [], partners = [], existingRec
       payload.append('company_id', formData.company_id);
       payload.append('investor_id', formData.investor_id);
       payload.append('amount', formData.amount);
+      payload.append('currency', formData.currency);
+      payload.append('exchange_rate', formData.exchange_rate);
       payload.append('entry_direction', formData.entry_direction);
       payload.append('status', formData.status);
       payload.append('transaction_date', formData.transaction_date);
@@ -127,7 +134,7 @@ export default function DepositForm({ companies = [], partners = [], existingRec
       </div>
 
       <div style={{ marginBottom: '15px' }}>
-        <label style={{ fontWeight: 'bold' }}>Amount *</label>
+        <label style={{ fontWeight: 'bold' }}>Amount (Original Currency) *</label>
         <input
           type="number"
           name="amount"
@@ -140,6 +147,40 @@ export default function DepositForm({ companies = [], partners = [], existingRec
         />
         {errors.amount && <p style={{ color: 'red', fontSize: '0.9em' }}>{errors.amount[0]}</p>}
       </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: '15px' }}>
+        <div>
+          <label style={{ fontWeight: 'bold' }}>Currency *</label>
+          <input
+            type="text"
+            name="currency"
+            value={formData.currency}
+            onChange={handleInputChange}
+            maxLength={3}
+            required
+            style={{ width: '100%', padding: '8px', textTransform: 'uppercase', borderColor: errors.currency ? 'red' : '#ccc', border: '1px solid', borderRadius: '4px' }}
+          />
+          {errors.currency && <p style={{ color: 'red', fontSize: '0.9em' }}>{errors.currency[0]}</p>}
+        </div>
+        <div>
+          <label style={{ fontWeight: 'bold' }}>Exchange Rate to EGP *</label>
+          <input
+            type="number"
+            name="exchange_rate"
+            step="0.000001"
+            min="0.000001"
+            value={formData.exchange_rate}
+            onChange={handleInputChange}
+            required
+            style={{ width: '100%', padding: '8px', borderColor: errors.exchange_rate ? 'red' : '#ccc', border: '1px solid', borderRadius: '4px' }}
+          />
+          {errors.exchange_rate && <p style={{ color: 'red', fontSize: '0.9em' }}>{errors.exchange_rate[0]}</p>}
+        </div>
+      </div>
+
+      <p style={{ marginTop: '-6px', marginBottom: '15px', color: '#555', fontSize: '0.9em' }}>
+        Statement amount is stored in EGP as Amount × Exchange Rate.
+      </p>
 
       <div style={{ marginBottom: '15px' }}>
         <label style={{ fontWeight: 'bold' }}>Direction *</label>
@@ -210,11 +251,11 @@ export default function DepositForm({ companies = [], partners = [], existingRec
       <div style={{ marginBottom: '15px', paddingTop: '10px' }}>
         <button
           type="submit"
-          disabled={loading || !formData.company_id || !formData.investor_id || !formData.amount}
+          disabled={loading || !formData.company_id || !formData.investor_id || !formData.amount || !formData.currency || !formData.exchange_rate}
           style={{
             padding: '10px 20px',
             cursor: loading ? 'not-allowed' : 'pointer',
-            backgroundColor: (loading || !formData.company_id || !formData.investor_id || !formData.amount) ? '#ccc' : '#007bff',
+            backgroundColor: (loading || !formData.company_id || !formData.investor_id || !formData.amount || !formData.currency || !formData.exchange_rate) ? '#ccc' : '#007bff',
             color: 'white',
             border: 'none',
             borderRadius: '4px',

@@ -51,7 +51,7 @@ export default function StatementOfAccountIndex() {
                 <th style={{ border: '1px solid #ddd', padding: '8px' }}>Company</th>
                 <th style={{ border: '1px solid #ddd', padding: '8px' }}>Investor</th>
                 <th style={{ border: '1px solid #ddd', padding: '8px' }}>Type</th>
-                <th style={{ border: '1px solid #ddd', padding: '8px' }}>Amount</th>
+                <th style={{ border: '1px solid #ddd', padding: '8px' }}>Amount (EGP)</th>
                 <th style={{ border: '1px solid #ddd', padding: '8px' }}>Status</th>
                 <th style={{ border: '1px solid #ddd', padding: '8px' }}>Date</th>
                 <th style={{ border: '1px solid #ddd', padding: '8px' }}>Actions</th>
@@ -64,7 +64,14 @@ export default function StatementOfAccountIndex() {
                   <td style={{ border: '1px solid #ddd', padding: '8px' }}>{account.company.name}</td>
                   <td style={{ border: '1px solid #ddd', padding: '8px' }}>{account.investor.name}</td>
                   <td style={{ border: '1px solid #ddd', padding: '8px' }}>{account.transaction_type}</td>
-                  <td style={{ border: '1px solid #ddd', padding: '8px' }}>${parseFloat(account.amount).toFixed(2)}</td>
+                  <td style={{ border: '1px solid #ddd', padding: '8px' }}>
+                    EGP {parseFloat(account.amount).toFixed(2)}
+                    {account.original_amount && account.original_currency && (
+                      <div style={{ fontSize: '0.85em', color: '#666' }}>
+                        {parseFloat(account.original_amount).toFixed(2)} {account.original_currency} @ {parseFloat(account.exchange_rate || 1).toFixed(6)}
+                      </div>
+                    )}
+                  </td>
                   <td style={{ border: '1px solid #ddd', padding: '8px' }}>{account.status}</td>
                   <td style={{ border: '1px solid #ddd', padding: '8px' }}>
                     {new Date(account.transaction_date).toLocaleDateString()}

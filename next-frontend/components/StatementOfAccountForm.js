@@ -6,17 +6,20 @@ export default function StatementOfAccountForm({ companies = [], investors = [],
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [files, setFiles] = useState([]);
-  const [formData, setFormData] = useState(existingRecord || {
+  const [formData, setFormData] = useState({
     company_id: '',
     investment_id: '',
     investor_id: '',
     transaction_type: 'Dividend',
     entry_direction: 'Credit',
     amount: '',
+    currency: 'EGP',
+    exchange_rate: '1',
     status: 'Pending',
     transaction_date: new Date().toISOString().split('T')[0],
     description: '',
     notes: '',
+    ...(existingRecord || {}),
   });
 
   const handleInputChange = (e) => {
@@ -39,6 +42,8 @@ export default function StatementOfAccountForm({ companies = [], investors = [],
     if (!formData.investment_id) clientErrors.investment_id = ['Investment is required'];
     if (!formData.investor_id) clientErrors.investor_id = ['Investor is required'];
     if (!formData.amount) clientErrors.amount = ['Amount is required'];
+    if (!formData.currency) clientErrors.currency = ['Currency is required'];
+    if (!formData.exchange_rate || Number(formData.exchange_rate) <= 0) clientErrors.exchange_rate = ['Exchange rate must be greater than zero'];
     if (!formData.transaction_date) clientErrors.transaction_date = ['Transaction date is required'];
 
     if (Object.keys(clientErrors).length > 0) {
@@ -212,7 +217,7 @@ export default function StatementOfAccountForm({ companies = [], investors = [],
       )}
 
       <div style={{ marginBottom: '15px' }}>
-        <label style={{ fontWeight: 'bold' }}>Amount *</label>
+        <label style={{ fontWeight: 'bold' }}>Amount (Original Currency) *</label>
         <input
           type="number"
           name="amount"
@@ -224,6 +229,36 @@ export default function StatementOfAccountForm({ companies = [], investors = [],
           style={{ width: '100%', padding: '8px', borderColor: errors.amount ? 'red' : '#ccc', border: '1px solid', borderRadius: '4px' }}
         />
         {errors.amount && <p style={{ color: 'red', fontSize: '0.9em' }}>{errors.amount[0]}</p>}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: '15px' }}>
+        <div>
+          <label style={{ fontWeight: 'bold' }}>Currency *</label>
+          <input
+            type="text"
+            name="currency"
+            value={formData.currency || existingRecord?.original_currency || 'EGP'}
+            onChange={handleInputChange}
+            maxLength={3}
+            required
+            style={{ width: '100%', padding: '8px', textTransform: 'uppercase', borderColor: errors.currency ? 'red' : '#ccc', border: '1px solid', borderRadius: '4px' }}
+          />
+          {errors.currency && <p style={{ color: 'red', fontSize: '0.9em' }}>{errors.currency[0]}</p>}
+        </div>
+        <div>
+          <label style={{ fontWeight: 'bold' }}>Exchange Rate to EGP *</label>
+          <input
+            type="number"
+            name="exchange_rate"
+            step="0.000001"
+            min="0.000001"
+            value={formData.exchange_rate || existingRecord?.exchange_rate || '1'}
+            onChange={handleInputChange}
+            required
+            style={{ width: '100%', padding: '8px', borderColor: errors.exchange_rate ? 'red' : '#ccc', border: '1px solid', borderRadius: '4px' }}
+          />
+          {errors.exchange_rate && <p style={{ color: 'red', fontSize: '0.9em' }}>{errors.exchange_rate[0]}</p>}
+        </div>
       </div>
 
       <div style={{ marginBottom: '15px' }}>

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Dividend;
 use App\Models\Investment;
+use App\Models\Investor;
 use App\Models\StatementOfAccount;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -14,10 +15,38 @@ class DividendController extends Controller
     /**
      * Display a listing of dividends.
      */
-    public function index()
+    public function index(Request $request)
     {
+        $query = Dividend::with(['company', 'investment.investor'])
+            ->latest('created_at');
+
+        if ($request->filled('company_id')) {
+            $query->where('company_id', (int) $request->query('company_id'));
+        }
+
+        $requestedInvestorId = $request->filled('investor_id')
+            ? (int) $request->query('investor_id')
+            : null;
+
+        if ($requestedInvestorId) {
+            $query->whereHas('investment', function ($subQuery) use ($requestedInvestorId) {
+                $subQuery->where('investor_id', $requestedInvestorId);
+            });
+        } else {
+            $user = $request->user();
+            if ($user && ! empty($user->email)) {
+                $linkedInvestor = Investor::resolveLinkedByEmail((string) $user->email);
+
+                if ($linkedInvestor) {
+                    $query->whereHas('investment', function ($subQuery) use ($linkedInvestor) {
+                        $subQuery->where('investor_id', (int) $linkedInvestor->id);
+                    });
+                }
+            }
+        }
+
         return response()->json([
-            'data' => Dividend::with(['company', 'investment.investor'])->latest('created_at')->get(),
+            'data' => $query->get(),
         ]);
     }
 

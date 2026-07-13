@@ -53,8 +53,13 @@ export default function ViewStatementOfAccount() {
             <strong>Type:</strong> {record.transaction_type}
           </p>
           <p>
-            <strong>Amount:</strong> ${parseFloat(record.amount).toFixed(2)}
+            <strong>Amount (EGP):</strong> EGP {parseFloat(record.amount).toFixed(2)}
           </p>
+          {(record.original_amount || record.original_currency) && (
+            <p>
+              <strong>Original Amount:</strong> {parseFloat(record.original_amount || record.amount).toFixed(2)} {record.original_currency || 'EGP'} @ {parseFloat(record.exchange_rate || 1).toFixed(6)}
+            </p>
+          )}
           <p>
             <strong>Status:</strong> {record.status}
           </p>

@@ -40,6 +40,9 @@ class StatementOfAccount extends Model
         'transaction_type',
         'entry_direction',
         'amount',
+        'original_amount',
+        'original_currency',
+        'exchange_rate',
         'status',
         'transaction_date',
         'description',
@@ -51,6 +54,8 @@ class StatementOfAccount extends Model
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'original_amount' => 'decimal:2',
+        'exchange_rate' => 'decimal:6',
         'transaction_date' => 'datetime',
         'attachment_paths' => 'array',
     ];

@@ -38,14 +38,31 @@ class StatementOfAccountController extends Controller
         $data = $request->validate([
             'company_id' => ['required', 'integer', Rule::exists('companies', 'id')],
             'total_amount' => 'required|numeric|min:0.01',
+            'currency' => ['nullable', 'string', 'size:3'],
+            'exchange_rate' => ['nullable', 'numeric', 'min:0.000001'],
             'transaction_date' => 'required|date',
             'notes' => 'nullable|string',
             'status' => ['nullable', 'string', Rule::in(StatementOfAccount::STATUSES)],
         ]);
 
+        $currency = strtoupper((string) ($data['currency'] ?? 'EGP'));
+        $exchangeRate = isset($data['exchange_rate'])
+            ? (float) $data['exchange_rate']
+            : ($currency === 'EGP' ? 1.0 : 1.0);
+
+        if ($currency === 'EGP') {
+            $exchangeRate = 1.0;
+        }
+
+        $totalOriginal = (float) $data['total_amount'];
+        $totalEgp = round($totalOriginal * $exchangeRate, 2);
+
         $created = $this->createCompanyWideDividendStatements([
             'company_id' => $data['company_id'],
-            'amount' => $data['total_amount'],
+            'amount' => $totalEgp,
+            'original_amount' => $totalOriginal,
+            'original_currency' => $currency,
+            'exchange_rate' => $exchangeRate,
             'status' => $data['status'] ?? StatementOfAccount::STATUS_PENDING,
             'transaction_date' => $data['transaction_date'],
             'description' => $data['notes'] ?? null,
@@ -60,6 +77,7 @@ class StatementOfAccountController extends Controller
         $this->normalizeDepositDirection($request);
         $validated = $request->validate($this->validationRules($request));
         $validated = $this->resolveInvestmentId($validated);
+        $validated = $this->applyCurrencyConversion($validated);
         $this->validateAttachments($validated);
 
         if ($this->shouldDistributeDividend($request, $validated)) {
@@ -120,6 +138,7 @@ class StatementOfAccountController extends Controller
         $this->normalizeDepositDirection($request, $statement_of_account);
         $validated = $request->validate($this->validationRules($request));
         $validated = $this->resolveInvestmentId($validated, $statement_of_account);
+        $validated = $this->applyCurrencyConversion($validated, $statement_of_account);
         $this->validateAttachments($validated, $statement_of_account);
 
         // Keep existing attachments unless new ones are uploaded
@@ -216,6 +235,9 @@ class StatementOfAccountController extends Controller
             'transaction_type' => [$required, 'string', Rule::in(StatementOfAccount::TRANSACTION_TYPES)],
             'entry_direction' => ['nullable', 'string', Rule::in(StatementOfAccount::ENTRY_DIRECTIONS)],
             'amount' => [$required, 'numeric', 'min:0.01'],
+            'currency' => ['nullable', 'string', 'size:3'],
+            'original_currency' => ['nullable', 'string', 'size:3'],
+            'exchange_rate' => ['nullable', 'numeric', 'min:0.000001'],
             'status' => [$required, 'string', Rule::in(StatementOfAccount::STATUSES)],
             'transaction_date' => [$required, 'date'],
             'description' => 'nullable|string',
@@ -229,6 +251,40 @@ class StatementOfAccountController extends Controller
         ];
 
         return $rules;
+    }
+
+    protected function applyCurrencyConversion(array $validated, ?StatementOfAccount $existing = null): array
+    {
+        $sourceAmount = isset($validated['amount'])
+            ? (float) $validated['amount']
+            : (float) ($existing?->original_amount ?? $existing?->amount ?? 0);
+
+        $sourceCurrency = strtoupper((string) (
+            $validated['currency']
+            ?? $validated['original_currency']
+            ?? $existing?->original_currency
+            ?? 'EGP'
+        ));
+
+        $exchangeRate = isset($validated['exchange_rate'])
+            ? (float) $validated['exchange_rate']
+            : (float) ($existing?->exchange_rate ?? 1.0);
+
+        if ($sourceCurrency === 'EGP') {
+            $exchangeRate = 1.0;
+        }
+
+        if ($exchangeRate <= 0) {
+            abort(422, 'Exchange rate must be greater than zero.');
+        }
+
+        $validated['original_amount'] = round($sourceAmount, 2);
+        $validated['original_currency'] = $sourceCurrency;
+        $validated['exchange_rate'] = round($exchangeRate, 6);
+        $validated['amount'] = round($sourceAmount * $exchangeRate, 2);
+        unset($validated['currency']);
+
+        return $validated;
     }
 
     protected function normalizeDepositDirection(Request $request, ?StatementOfAccount $existing = null): void
@@ -367,15 +423,21 @@ class StatementOfAccountController extends Controller
 
         $created = [];
         $remaining = round((float) $payload['amount'], 2);
+        $remainingOriginal = round((float) ($payload['original_amount'] ?? $payload['amount']), 2);
         $count = $investments->count();
 
         foreach ($investments->values() as $index => $investment) {
             if ($index === $count - 1) {
                 // Last row receives remainder to avoid rounding drift.
                 $share = round($remaining, 2);
+                $originalShare = round($remainingOriginal, 2);
             } else {
                 $share = round(((float) $investment->amount / $totalInvested) * (float) $payload['amount'], 2);
                 $remaining = round($remaining - $share, 2);
+
+                $baseOriginal = (float) ($payload['original_amount'] ?? $payload['amount']);
+                $originalShare = round(((float) $investment->amount / $totalInvested) * $baseOriginal, 2);
+                $remainingOriginal = round($remainingOriginal - $originalShare, 2);
             }
 
             $record = StatementOfAccount::create([
@@ -385,6 +447,9 @@ class StatementOfAccountController extends Controller
                 'transaction_type' => StatementOfAccount::TYPE_DIVIDEND,
                 'entry_direction' => null,
                 'amount' => $share,
+                'original_amount' => $originalShare,
+                'original_currency' => strtoupper((string) ($payload['original_currency'] ?? 'EGP')),
+                'exchange_rate' => (float) ($payload['exchange_rate'] ?? 1.0),
                 'status' => $payload['status'] ?? StatementOfAccount::STATUS_PENDING,
                 'transaction_date' => $payload['transaction_date'],
                 'description' => $payload['description'] ?? null,

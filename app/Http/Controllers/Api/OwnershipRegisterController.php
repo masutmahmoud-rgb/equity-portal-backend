@@ -164,7 +164,11 @@ class OwnershipRegisterController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate($this->rules());
-        $this->assertCompleteOwnershipRows((int) $validated['company_id'], $validated['ownerships']);
+        $validated['ownerships'] = $this->completeOwnershipRowsForStore(
+            (int) $validated['company_id'],
+            (int) $validated['portfolio_valuation_id'],
+            $validated['ownerships']
+        );
 
         $requestedStatus = $validated['status'] ?? OwnershipRegister::STATUS_DRAFT;
 
@@ -204,6 +208,58 @@ class OwnershipRegisterController extends Controller
         return response()->json([
             'data' => $this->formatRegister($register->load(['company', 'valuation', 'items.investor'])),
         ], 201);
+    }
+
+    protected function completeOwnershipRowsForStore(int $companyId, int $portfolioValuationId, array $inputRows): array
+    {
+        $requiredPartnerIds = $this->companyPartnerIds($companyId);
+
+        if (empty($requiredPartnerIds)) {
+            abort(422, 'Ownership register requires at least one active partner investment for this company.');
+        }
+
+        $ownerships = collect();
+
+        $currentRegister = OwnershipRegister::query()
+            ->with('items')
+            ->where('company_id', $companyId)
+            ->where('portfolio_valuation_id', $portfolioValuationId)
+            ->where('is_current', true)
+            ->first();
+
+        if ($currentRegister) {
+            $ownerships = collect($currentRegister->items)
+                ->mapWithKeys(function (OwnershipRegisterItem $item) {
+                    return [(int) $item->investor_id => (float) $item->ownership_percentage];
+                });
+        }
+
+        foreach ($inputRows as $row) {
+            $ownerships[(int) $row['investor_id']] = (float) $row['ownership_percentage'];
+        }
+
+        foreach ($requiredPartnerIds as $requiredPartnerId) {
+            if (! $ownerships->has($requiredPartnerId)) {
+                $ownerships[$requiredPartnerId] = 0.0;
+            }
+        }
+
+        $extra = $ownerships->keys()->diff($requiredPartnerIds)->values()->all();
+        if (! empty($extra)) {
+            abort(422, sprintf(
+                'Ownership rows contain unexpected partner IDs: [%s].',
+                implode(', ', $extra)
+            ));
+        }
+
+        return $ownerships
+            ->map(fn ($percentage, $investorId) => [
+                'investor_id' => (int) $investorId,
+                'ownership_percentage' => round((float) $percentage, 3),
+            ])
+            ->sortBy('investor_id')
+            ->values()
+            ->all();
     }
 
     public function show(OwnershipRegister $ownership_register)

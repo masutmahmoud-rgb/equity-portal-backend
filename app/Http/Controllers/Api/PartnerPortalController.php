@@ -364,6 +364,9 @@ class PartnerPortalController extends Controller
                 'credit' => $credit,
                 'debit' => $debit,
                 'running_balance' => $runningBalance,
+                'original_amount' => $transaction->original_amount,
+                'original_currency' => $transaction->original_currency,
+                'exchange_rate' => $transaction->exchange_rate,
                 'entry_direction' => $transaction->entry_direction,
                 'notes' => $transaction->notes,
                 'status' => $transaction->status,
@@ -1070,10 +1073,7 @@ class PartnerPortalController extends Controller
     {
         return PortfolioValuation::query()
             ->where('status', PortfolioValuation::STATUS_PUBLISHED)
-            ->where(function ($query) use ($investorId) {
-                $query->where('investor_id', $investorId)
-                    ->orWhereNull('investor_id');
-            });
+            ->where('investor_id', $investorId);
     }
 
     protected function latestValuationByCompanyForPartner(int $investorId)
