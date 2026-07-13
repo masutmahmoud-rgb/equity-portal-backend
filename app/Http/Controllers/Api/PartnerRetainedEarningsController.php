@@ -3,8 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\CurrencySetting;
-use App\Models\ExchangeRate;
 use App\Models\Investor;
 use App\Models\PortfolioValuation;
 use App\Models\StatementOfAccount;
@@ -33,30 +31,6 @@ class PartnerRetainedEarningsController extends Controller
             ], 403);
         }
 
-        $reportingCurrency = strtoupper((string) (CurrencySetting::query()->value('reporting_currency') ?? 'USD'));
-
-        $activeRatesByCode = ExchangeRate::active()
-            ->whereDate('effective_date', '<=', now()->toDateString())
-            ->orderByDesc('effective_date')
-            ->orderByDesc('id')
-            ->get()
-            ->groupBy(function (ExchangeRate $rate) {
-                return strtoupper((string) $rate->currency_code);
-            })
-            ->map(function ($rates) {
-                return (float) $rates->first()->exchange_rate;
-            });
-
-        $resolveRate = function (?string $currencyCode) use ($activeRatesByCode, $reportingCurrency): float {
-            $source = strtoupper((string) ($currencyCode ?? 'USD'));
-
-            if ($source === $reportingCurrency) {
-                return 1.0;
-            }
-
-            return (float) ($activeRatesByCode->get($source) ?? 1.0);
-        };
-
         $credits = PortfolioValuation::query()
             ->with('company')
             ->where('investor_id', $investor->id)
@@ -67,10 +41,18 @@ class PartnerRetainedEarningsController extends Controller
             ->unique(function (PortfolioValuation $valuation) {
                 return $valuation->company_id . '|' . ($valuation->valuation_period ?? '');
             })
-            ->map(function (PortfolioValuation $valuation) use ($resolveRate) {
+            ->map(function (PortfolioValuation $valuation) {
                 $amount = (float) ($valuation->profit ?? 0);
-                $companyCurrency = strtoupper((string) ($valuation->company?->base_currency ?? 'USD'));
-                $exchangeRate = $resolveRate($companyCurrency);
+                $companyCurrency = strtoupper((string) ($valuation->company?->base_currency ?? 'EGP'));
+                $exchangeRate = (float) ($valuation->company?->exchange_rate ?? 1.0);
+
+                if ($companyCurrency === 'EGP') {
+                    $exchangeRate = 1.0;
+                }
+
+                if ($exchangeRate <= 0) {
+                    $exchangeRate = 1.0;
+                }
 
                 return [
                     'date' => optional($valuation->valuation_date ?? $valuation->created_at)->toDateString(),
@@ -81,7 +63,7 @@ class PartnerRetainedEarningsController extends Controller
                     'exchange_rate' => $exchangeRate,
                     'credit_original' => $amount,
                     'debit_original' => 0.0,
-                    'credit' => $amount * $exchangeRate,
+                    'credit' => $amount,
                     'debit' => 0.0,
                     'period' => $valuation->valuation_period,
                     'sort_date' => optional($valuation->valuation_date ?? $valuation->created_at)->timestamp ?? 0,
@@ -90,17 +72,47 @@ class PartnerRetainedEarningsController extends Controller
             });
 
         $debits = StatementOfAccount::query()
-            ->with('company')
+            ->with(['company', 'sourceDividend'])
             ->where('investor_id', $investor->id)
             ->where('transaction_type', StatementOfAccount::TYPE_DIVIDEND)
             ->where('status', StatementOfAccount::STATUS_PAID)
             ->orderBy('transaction_date')
             ->orderBy('created_at')
             ->get()
-            ->map(function (StatementOfAccount $statement) use ($resolveRate) {
-                $amount = (float) $statement->amount;
-                $companyCurrency = strtoupper((string) ($statement->company?->base_currency ?? 'USD'));
-                $exchangeRate = $resolveRate($companyCurrency);
+            ->map(function (StatementOfAccount $statement) {
+                $companyCurrency = strtoupper((string) ($statement->company?->base_currency ?? 'EGP'));
+                $sourceDividend = $statement->sourceDividend;
+
+                $sourceCurrency = strtoupper((string) (
+                    $sourceDividend?->original_currency
+                    ?? $statement->original_currency
+                    ?? $companyCurrency
+                ));
+
+                $exchangeRate = (float) (
+                    $sourceDividend?->exchange_rate
+                    ?? $statement->exchange_rate
+                    ?? 1.0
+                );
+
+                if ($companyCurrency === 'EGP') {
+                    $exchangeRate = 1.0;
+                }
+
+                if ($exchangeRate <= 0) {
+                    $exchangeRate = 1.0;
+                }
+
+                if ($sourceDividend && (float) $sourceDividend->amount > 0) {
+                    $amount = (float) $sourceDividend->amount;
+                } elseif ($statement->original_amount !== null && $sourceCurrency === $companyCurrency) {
+                    $amount = (float) $statement->original_amount;
+                } elseif ($companyCurrency !== 'EGP' && $exchangeRate > 0) {
+                    // Legacy compatibility: infer company-currency amount from EGP statement rows.
+                    $amount = round(((float) $statement->amount) / $exchangeRate, 2);
+                } else {
+                    $amount = (float) $statement->amount;
+                }
 
                 return [
                     'date' => optional($statement->transaction_date ?? $statement->created_at)->toDateString(),
@@ -112,7 +124,7 @@ class PartnerRetainedEarningsController extends Controller
                     'credit_original' => 0.0,
                     'debit_original' => $amount,
                     'credit' => 0.0,
-                    'debit' => $amount * $exchangeRate,
+                    'debit' => $amount,
                     'period' => optional($statement->transaction_date)->format('Y-m'),
                     'sort_date' => optional($statement->transaction_date ?? $statement->created_at)->timestamp ?? 0,
                     'sort_time' => optional($statement->created_at)->timestamp ?? 0,
@@ -126,11 +138,11 @@ class PartnerRetainedEarningsController extends Controller
             })
             ->values();
 
-        $runningBalanceReporting = 0.0;
+        $runningBalance = 0.0;
         $companyBalances = [];
 
-        $rows = $ledger->map(function (array $entry) use (&$runningBalanceReporting, &$companyBalances) {
-            $runningBalanceReporting += ((float) $entry['credit'] - (float) $entry['debit']);
+        $rows = $ledger->map(function (array $entry) use (&$runningBalance, &$companyBalances) {
+            $runningBalance += ((float) $entry['credit'] - (float) $entry['debit']);
 
             $companyKey = (string) ($entry['company_id'] ?? 0);
             if (! isset($companyBalances[$companyKey])) {
@@ -157,7 +169,7 @@ class PartnerRetainedEarningsController extends Controller
                 'description' => $entry['description'],
                 'credit' => round((float) $entry['credit'], 2),
                 'debit' => round((float) $entry['debit'], 2),
-                'balance' => round($runningBalanceReporting, 2),
+                'balance' => round($runningBalance, 2),
                 'period' => $entry['period'],
                 'source_currency' => $entry['currency'],
                 'exchange_rate' => round((float) $entry['exchange_rate'], 6),
@@ -189,10 +201,10 @@ class PartnerRetainedEarningsController extends Controller
                     'name' => $investor->name,
                     'email' => $investor->email,
                 ],
-                'reporting_currency' => $reportingCurrency,
+                'reporting_currency' => 'MULTI',
                 'ledger' => $rows->values(),
                 'company_summaries' => $companySummaries,
-                'current_retained_earnings_balance' => round($runningBalanceReporting, 2),
+                'current_retained_earnings_balance' => round($runningBalance, 2),
             ],
         ]);
     }

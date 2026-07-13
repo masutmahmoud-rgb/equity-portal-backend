@@ -113,4 +113,9 @@ class StatementOfAccount extends Model
     {
         return $this->belongsTo(Investor::class);
     }
+
+    public function sourceDividend()
+    {
+        return $this->belongsTo(Dividend::class, 'source_dividend_id');
+    }
 }

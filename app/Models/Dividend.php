@@ -18,6 +18,8 @@ class Dividend extends Model
         'company_id',
         'investment_id',
         'amount',
+        'original_currency',
+        'exchange_rate',
         'status',
         'payment_date',
         'notes',
@@ -25,6 +27,7 @@ class Dividend extends Model
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'exchange_rate' => 'decimal:6',
         'payment_date' => 'datetime',
     ];
 
